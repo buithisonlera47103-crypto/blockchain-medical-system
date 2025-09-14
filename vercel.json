@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "name": "blockchain-medical-system",
+  "builds": [
+    {
+      "src": "react-app/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "build"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/react-app/$1"
+    }
+  ],
+  "buildCommand": "cd react-app && npm run build",
+  "outputDirectory": "react-app/build",
+  "installCommand": "cd react-app && npm install"
+}
