@@ -1,0 +1,284 @@
+# OWASP ZAP Security Testing Configuration
+# Tests for OWASP Top 10 vulnerabilities in the Blockchain EMR system
+
+env:
+  contexts:
+    - name: "Blockchain EMR API"
+      urls:
+        - "http://localhost:3000"
+      includePaths:
+        - "http://localhost:3000/api/.*"
+      excludePaths:
+        - "http://localhost:3000/api/v1/monitoring/.*"
+        - "http://localhost:3000/static/.*"
+      authentication:
+        method: "scriptBasedAuthentication"
+        loginUrl: "http://localhost:3000/api/v1/auth/login"
+        loginRequestData: |
+          {
+            "email": "test@example.com",
+            "password": "testpassword123"
+          }
+        loggedInRegex: "\\Q\"success\":true\\E"
+        loggedOutRegex: "\\Q\"error\":\"UNAUTHORIZED\"\\E"
+      sessionManagement:
+        method: "httpAuthSessionManagement"
+      users:
+        - name: "testuser"
+          credentials:
+            email: "test@example.com"
+            password: "testpassword123"
+        - name: "admin"
+          credentials:
+            email: "admin@example.com"
+            password: "adminpassword123"
+
+  parameters:
+    failOnError: true
+    failOnWarning: false
+    progressToStdout: true
+
+jobs:
+  # 1. A01:2021 – Broken Access Control
+  - type: activeScan
+    parameters:
+      context: "Blockchain EMR API"
+      user: "testuser"
+      policy: "API-scan-minimal"
+      rules:
+        - id: 10095  # Backup File Disclosure
+          strength: "HIGH"
+        - id: 10098  # Cross-Domain Misconfiguration
+          strength: "HIGH"
+        - id: 40003  # CRLF Injection
+          strength: "HIGH"
+        - id: 40008  # Parameter Tampering
+          strength: "HIGH"
+        - id: 40009  # Server Side Include
+          strength: "HIGH"
+        - id: 40012  # Cross Site Scripting (Reflected)
+          strength: "HIGH"
+        - id: 40014  # Cross Site Scripting (Persistent)
+          strength: "HIGH"
+        - id: 40016  # Cross Site Scripting (Persistent) - Prime
+          strength: "HIGH"
+        - id: 40017  # Cross Site Scripting (Persistent) - Spider
+          strength: "HIGH"
+        - id: 40018  # SQL Injection
+          strength: "HIGH"
+        - id: 40019  # SQL Injection - MySQL
+          strength: "HIGH"
+        - id: 40020  # SQL Injection - Hypersonic SQL
+          strength: "HIGH"
+        - id: 40021  # SQL Injection - Oracle
+          strength: "HIGH"
+        - id: 40022  # SQL Injection - PostgreSQL
+          strength: "HIGH"
+        - id: 40023  # Possible Username Enumeration
+          strength: "HIGH"
+        - id: 40024  # SQL Injection - SQLite
+          strength: "HIGH"
+        - id: 40025  # Proxy Disclosure
+          strength: "HIGH"
+        - id: 40026  # Cross Site Scripting (DOM Based)
+          strength: "HIGH"
+        - id: 40027  # SQL Injection - MsSQL
+          strength: "HIGH"
+        - id: 40028  # LDAP Injection
+          strength: "HIGH"
+        - id: 40029  # XPATH Injection
+          strength: "HIGH"
+
+  # 2. A02:2021 – Cryptographic Failures
+  - type: passiveScan-config
+    parameters:
+      rules:
+        - id: 10035  # Strict-Transport-Security Header
+          threshold: "HIGH"
+        - id: 10036  # HTTP Server Response Header
+          threshold: "MEDIUM"
+        - id: 10037  # Server Leaks Information via "X-Powered-By" HTTP Response Header Field(s)
+          threshold: "LOW"
+        - id: 10040  # Secure Pages Include Mixed Content
+          threshold: "MEDIUM"
+        - id: 10041  # HTTPS Content Available via HTTP
+          threshold: "MEDIUM"
+        - id: 10042  # HTTPS to HTTP Insecure Transition in Form Post
+          threshold: "MEDIUM"
+        - id: 10043  # User Controllable JavaScript Event (XSS)
+          threshold: "HIGH"
+        - id: 10044  # Big Redirect Detected (Potential Sensitive Information Leak)
+          threshold: "MEDIUM"
+        - id: 10045  # Source Code Disclosure - /WEB-INF folder
+          threshold: "HIGH"
+        - id: 10048  # Remote Code Execution - Shell Shock
+          threshold: "HIGH"
+        - id: 10049  # Content Cacheability
+          threshold: "MEDIUM"
+        - id: 10050  # Retrieved from Cache
+          threshold: "INFORMATIONAL"
+        - id: 10051  # Relative Path Confusion
+          threshold: "MEDIUM"
+        - id: 10052  # X-ChromeLogger-Data (XCOLD) Header Information Leak
+          threshold: "MEDIUM"
+        - id: 10054  # Cookie Without SameSite Attribute
+          threshold: "LOW"
+        - id: 10055  # CSP Scanner
+          threshold: "MEDIUM"
+        - id: 10056  # X-Debug-Token Information Leak
+          threshold: "MEDIUM"
+        - id: 10057  # Username Hash Found
+          threshold: "INFORMATIONAL"
+        - id: 10061  # X-AspNet-Version Response Header
+          threshold: "LOW"
+        - id: 10062  # PII Disclosure
+          threshold: "HIGH"
+        - id: 10063  # Feature Policy Header Not Set
+          threshold: "LOW"
+        - id: 10096  # Timestamp Disclosure
+          threshold: "LOW"
+        - id: 10097  # Hash Disclosure
+          threshold: "INFORMATIONAL"
+        - id: 10098  # Cross-Domain Misconfiguration
+          threshold: "MEDIUM"
+        - id: 10105  # Weak Authentication Method
+          threshold: "MEDIUM"
+        - id: 10108  # Reverse Tabnabbing
+          threshold: "MEDIUM"
+        - id: 10109  # Modern Web Application
+          threshold: "INFORMATIONAL"
+        - id: 10110  # Dangerous JS Functions
+          threshold: "LOW"
+        - id: 10202  # Absence of Anti-CSRF Tokens
+          threshold: "MEDIUM"
+
+  # 3. A03:2021 – Injection
+  - type: activeScan
+    parameters:
+      context: "Blockchain EMR API"
+      user: "testuser"
+      url: "http://localhost:3000/api/v1/records"
+      recurse: true
+      policy: "API-scan-minimal"
+      rules:
+        - id: 40018  # SQL Injection
+          strength: "HIGH"
+        - id: 40019  # SQL Injection - MySQL
+          strength: "HIGH"
+        - id: 40020  # SQL Injection - Hypersonic SQL
+          strength: "HIGH"
+        - id: 40021  # SQL Injection - Oracle
+          strength: "HIGH"
+        - id: 40022  # SQL Injection - PostgreSQL
+          strength: "HIGH"
+        - id: 40024  # SQL Injection - SQLite
+          strength: "HIGH"
+        - id: 40027  # SQL Injection - MsSQL
+          strength: "HIGH"
+        - id: 40028  # LDAP Injection
+          strength: "HIGH"
+        - id: 40029  # XPATH Injection
+          strength: "HIGH"
+        - id: 90019  # Code Injection
+          strength: "HIGH"
+        - id: 90020  # Command Injection
+          strength: "HIGH"
+
+  # 4. A04:2021 – Insecure Design
+  - type: spider
+    parameters:
+      context: "Blockchain EMR API"
+      user: "testuser"
+      url: "http://localhost:3000"
+      maxDuration: 5
+      maxDepth: 5
+      acceptCookies: true
+      handleParameters: "USE_ALL"
+
+  # 5. A05:2021 – Security Misconfiguration
+  - type: activeScan
+    parameters:
+      context: "Blockchain EMR API"
+      user: "testuser"
+      policy: "API-scan-minimal"
+      rules:
+        - id: 10095  # Backup File Disclosure
+          strength: "HIGH"
+        - id: 40003  # CRLF Injection
+          strength: "HIGH"
+        - id: 40025  # Proxy Disclosure
+          strength: "HIGH"
+        - id: 90001  # Insecure JSF ViewState
+          strength: "HIGH"
+        - id: 90011  # Charset Mismatch
+          strength: "MEDIUM"
+        - id: 90022  # Application Error Disclosure
+          strength: "MEDIUM"
+
+  # 6. A06:2021 – Vulnerable and Outdated Components
+  - type: passiveScan-config
+    parameters:
+      rules:
+        - id: 10037  # Server Leaks Information via "X-Powered-By"
+          threshold: "LOW"
+        - id: 10061  # X-AspNet-Version Response Header
+          threshold: "LOW"
+
+  # 7. A07:2021 – Identification and Authentication Failures
+  - type: activeScan
+    parameters:
+      context: "Blockchain EMR API"
+      user: "testuser"
+      url: "http://localhost:3000/api/v1/auth"
+      recurse: true
+      policy: "API-scan-minimal"
+      rules:
+        - id: 40023  # Possible Username Enumeration
+          strength: "HIGH"
+        - id: 10105  # Weak Authentication Method
+          strength: "MEDIUM"
+
+  # 8. A08:2021 – Software and Data Integrity Failures
+  - type: activeScan
+    parameters:
+      context: "Blockchain EMR API"
+      user: "testuser"
+      policy: "API-scan-minimal"
+      rules:
+        - id: 90001  # Insecure JSF ViewState
+          strength: "HIGH"
+
+  # 9. A09:2021 – Security Logging and Monitoring Failures
+  - type: passiveScan-config
+    parameters:
+      rules:
+        - id: 10096  # Timestamp Disclosure
+          threshold: "LOW"
+
+  # 10. A10:2021 – Server-Side Request Forgery (SSRF)
+  - type: activeScan
+    parameters:
+      context: "Blockchain EMR API"
+      user: "testuser"
+      policy: "API-scan-minimal"
+      rules:
+        - id: 40009  # Server Side Include
+          strength: "HIGH"
+
+  # Generate comprehensive report
+  - type: report
+    parameters:
+      template: "traditional-html"
+      reportDir: "./security/reports"
+      reportFile: "owasp-zap-security-report"
+      reportTitle: "Blockchain EMR Security Assessment"
+      reportDescription: "OWASP Top 10 security testing results for the Blockchain EMR system"
+
+  # Generate JSON report for CI/CD integration
+  - type: report
+    parameters:
+      template: "traditional-json"
+      reportDir: "./security/reports"
+      reportFile: "owasp-zap-security-report"
+      reportTitle: "Blockchain EMR Security Assessment - JSON"
+      reportDescription: "Machine-readable security testing results"

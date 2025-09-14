@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端API连接测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        button { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔧 前端API连接诊断工具</h1>
+    
+    <div class="test-section info">
+        <h3>📋 测试说明</h3>
+        <p>这个页面将帮助诊断前端与后端API的连接问题</p>
+        <p><strong>后端地址:</strong> http://localhost:3001</p>
+        <p><strong>前端地址:</strong> http://localhost:3000</p>
+    </div>
+
+    <div class="test-section">
+        <h3>🏥 1. 后端健康检查</h3>
+        <button onclick="testBackendHealth()">测试后端连接</button>
+        <div id="health-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>🔐 2. 登录API测试</h3>
+        <button onclick="testLoginAPI()">测试登录API</button>
+        <div id="login-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>📝 3. 注册API测试</h3>
+        <button onclick="testRegisterAPI()">测试注册API</button>
+        <div id="register-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>🌐 4. CORS测试</h3>
+        <button onclick="testCORS()">测试跨域请求</button>
+        <div id="cors-result"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3001/api/v1';
+        
+        function log(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : 'info';
+            element.innerHTML = `<div class="${className}"><strong>[${timestamp}]</strong> ${message}</div>`;
+        }
+
+        async function testBackendHealth() {
+            log('health-result', '正在测试后端健康检查...', 'info');
+            try {
+                const response = await fetch('http://localhost:3001/health');
+                const data = await response.json();
+                log('health-result', `✅ 后端连接成功！<pre>${JSON.stringify(data, null, 2)}</pre>`, 'success');
+            } catch (error) {
+                log('health-result', `❌ 后端连接失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function testLoginAPI() {
+            log('login-result', '正在测试登录API...', 'info');
+            try {
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username: 'test_user',
+                        password: 'test_password'
+                    })
+                });
+                
+                const data = await response.json();
+                if (response.status === 401) {
+                    log('login-result', `✅ 登录API正常工作（返回401是预期的，因为用户不存在）<pre>${JSON.stringify(data, null, 2)}</pre>`, 'success');
+                } else {
+                    log('login-result', `⚠️ 登录API响应异常: ${response.status}<pre>${JSON.stringify(data, null, 2)}</pre>`, 'error');
+                }
+            } catch (error) {
+                log('login-result', `❌ 登录API请求失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function testRegisterAPI() {
+            log('register-result', '正在测试注册API...', 'info');
+            try {
+                const response = await fetch(`${API_BASE}/auth/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username: `test_${Date.now()}`,
+                        email: `test_${Date.now()}@test.com`,
+                        password: 'Test123!',
+                        firstName: '测试',
+                        lastName: '用户',
+                        role: 'patient'
+                    })
+                });
+                
+                const data = await response.json();
+                if (response.status === 201 || response.status === 200) {
+                    log('register-result', `✅ 注册API工作正常！<pre>${JSON.stringify(data, null, 2)}</pre>`, 'success');
+                } else {
+                    log('register-result', `⚠️ 注册API响应: ${response.status}<pre>${JSON.stringify(data, null, 2)}</pre>`, 'info');
+                }
+            } catch (error) {
+                log('register-result', `❌ 注册API请求失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function testCORS() {
+            log('cors-result', '正在测试CORS配置...', 'info');
+            try {
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'OPTIONS',
+                    headers: {
+                        'Origin': 'http://localhost:3000',
+                        'Access-Control-Request-Method': 'POST',
+                        'Access-Control-Request-Headers': 'Content-Type'
+                    }
+                });
+                
+                const corsHeaders = {
+                    'Access-Control-Allow-Origin': response.headers.get('Access-Control-Allow-Origin'),
+                    'Access-Control-Allow-Methods': response.headers.get('Access-Control-Allow-Methods'),
+                    'Access-Control-Allow-Headers': response.headers.get('Access-Control-Allow-Headers'),
+                    'Access-Control-Allow-Credentials': response.headers.get('Access-Control-Allow-Credentials')
+                };
+                
+                log('cors-result', `✅ CORS配置正常！<pre>${JSON.stringify(corsHeaders, null, 2)}</pre>`, 'success');
+            } catch (error) {
+                log('cors-result', `❌ CORS测试失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 页面加载时自动运行基础测试
+        window.onload = function() {
+            setTimeout(testBackendHealth, 500);
+        };
+    </script>
+</body>
+</html>

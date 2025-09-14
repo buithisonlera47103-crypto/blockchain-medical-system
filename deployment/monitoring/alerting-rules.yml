@@ -1,0 +1,296 @@
+# EMR Blockchain System Alerting Rules
+# Comprehensive alerting for critical system failures and performance issues
+
+groups:
+  - name: emr-system-critical
+    interval: 30s
+    rules:
+      # Service availability alerts
+      - alert: ServiceDown
+        expr: up{job=~"emr-backend|mysql|redis|ipfs"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "{{ $labels.job }} service is down"
+          description: "Service {{ $labels.job }} has been down for more than 1 minute"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/service-down"
+
+      - alert: HighErrorRate
+        expr: |
+          (
+            rate(http_requests_total{job="emr-backend",status_code=~"5.."}[5m]) /
+            rate(http_requests_total{job="emr-backend"}[5m])
+          ) * 100 > 5
+        for: 5m
+        labels:
+          severity: critical
+          category: performance
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value }}% for the last 5 minutes"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/high-error-rate"
+
+      - alert: HighResponseTime
+        expr: |
+          histogram_quantile(0.95, 
+            rate(http_request_duration_ms_bucket{job="emr-backend"}[5m])
+          ) > 2000
+        for: 5m
+        labels:
+          severity: critical
+          category: performance
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile response time is {{ $value }}ms"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/high-response-time"
+
+  - name: emr-system-warning
+    interval: 60s
+    rules:
+      # Resource usage warnings
+      - alert: HighMemoryUsage
+        expr: |
+          (nodejs_memory_usage_bytes{job="emr-backend"} / 
+           nodejs_memory_limit_bytes{job="emr-backend"}) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}% for {{ $labels.instance }}"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/high-memory"
+
+      - alert: HighCPUUsage
+        expr: |
+          rate(nodejs_cpu_usage_seconds{job="emr-backend"}[5m]) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}% for {{ $labels.instance }}"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/high-cpu"
+
+      - alert: DatabaseConnectionsHigh
+        expr: |
+          mysql_global_status_threads_connected{job="mysql"} > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "High database connections"
+          description: "Database has {{ $value }} active connections"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/db-connections"
+
+  - name: emr-security-alerts
+    interval: 30s
+    rules:
+      # Security-related alerts
+      - alert: HighFailedLoginRate
+        expr: |
+          rate(business_failedLogins{job="emr-backend"}[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "High failed login rate detected"
+          description: "Failed login rate is {{ $value }} attempts/second"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/failed-logins"
+
+      - alert: UnauthorizedAccessAttempt
+        expr: |
+          increase(http_requests_total{job="emr-backend",status_code="403"}[5m]) > 50
+        for: 1m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Multiple unauthorized access attempts"
+          description: "{{ $value }} unauthorized access attempts in the last 5 minutes"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/unauthorized-access"
+
+      - alert: SecurityEventDetected
+        expr: |
+          increase(log_entries_total{job="emr-backend",level="warn",category="SECURITY"}[1m]) > 0
+        for: 0s
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Security event detected"
+          description: "Security event logged in the application"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/security-events"
+
+  - name: emr-business-alerts
+    interval: 60s
+    rules:
+      # Business logic alerts
+      - alert: BlockchainTransactionFailures
+        expr: |
+          rate(blockchain_transactions_failed_total{job="emr-backend"}[10m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          category: blockchain
+        annotations:
+          summary: "Blockchain transaction failures detected"
+          description: "{{ $value }} blockchain transactions failing per second"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/blockchain-failures"
+
+      - alert: IPFSUploadFailures
+        expr: |
+          rate(ipfs_uploads_failed_total{job="emr-backend"}[10m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "IPFS upload failures detected"
+          description: "{{ $value }} IPFS uploads failing per second"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/ipfs-failures"
+
+      - alert: LowUserActivity
+        expr: |
+          business_activeUsers{job="emr-backend"} < 5
+        for: 30m
+        labels:
+          severity: info
+          category: business
+        annotations:
+          summary: "Low user activity"
+          description: "Only {{ $value }} active users in the system"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/low-activity"
+
+  - name: emr-infrastructure-alerts
+    interval: 60s
+    rules:
+      # Infrastructure alerts
+      - alert: DiskSpaceHigh
+        expr: |
+          (
+            node_filesystem_size_bytes{job="node-exporter",fstype!="tmpfs"} -
+            node_filesystem_free_bytes{job="node-exporter",fstype!="tmpfs"}
+          ) / node_filesystem_size_bytes{job="node-exporter",fstype!="tmpfs"} * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "High disk usage"
+          description: "Disk usage is {{ $value }}% on {{ $labels.instance }}"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/disk-space"
+
+      - alert: NetworkLatencyHigh
+        expr: |
+          histogram_quantile(0.95, 
+            rate(http_request_duration_ms_bucket{job="emr-backend"}[5m])
+          ) > 1000
+        for: 10m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "High network latency"
+          description: "95th percentile latency is {{ $value }}ms"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/network-latency"
+
+      - alert: PodRestartingFrequently
+        expr: |
+          increase(kube_pod_container_status_restarts_total{namespace="emr-blockchain-prod"}[1h]) > 3
+        for: 0s
+        labels:
+          severity: warning
+          category: kubernetes
+        annotations:
+          summary: "Pod restarting frequently"
+          description: "Pod {{ $labels.pod }} has restarted {{ $value }} times in the last hour"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/pod-restarts"
+
+  - name: emr-data-integrity
+    interval: 300s  # Check every 5 minutes
+    rules:
+      # Data integrity alerts
+      - alert: DatabaseReplicationLag
+        expr: |
+          mysql_slave_lag_seconds{job="mysql"} > 60
+        for: 2m
+        labels:
+          severity: warning
+          category: data
+        annotations:
+          summary: "Database replication lag detected"
+          description: "Replication lag is {{ $value }} seconds"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/replication-lag"
+
+      - alert: BlockchainSyncIssue
+        expr: |
+          abs(blockchain_latest_block{job="emr-backend"} - blockchain_network_latest_block) > 10
+        for: 5m
+        labels:
+          severity: critical
+          category: blockchain
+        annotations:
+          summary: "Blockchain synchronization issue"
+          description: "Local blockchain is {{ $value }} blocks behind network"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/blockchain-sync"
+
+      - alert: DataInconsistency
+        expr: |
+          abs(
+            business_medicalRecordsCreated{job="emr-backend"} - 
+            blockchain_records_count{job="emr-backend"}
+          ) > 5
+        for: 10m
+        labels:
+          severity: warning
+          category: data
+        annotations:
+          summary: "Data inconsistency detected"
+          description: "Mismatch between database and blockchain record counts"
+          runbook_url: "https://docs "
+
+  - name: emr-compliance-alerts
+    interval: 3600s  # Check hourly
+    rules:
+      # Compliance and audit alerts
+      - alert: AuditLogGap
+        expr: |
+          time() - audit_log_last_entry_timestamp{job="emr-backend"} > 3600
+        for: 0s
+        labels:
+          severity: critical
+          category: compliance
+        annotations:
+          summary: "Audit log gap detected"
+          description: "No audit log entries for over 1 hour"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/audit-gap"
+
+      - alert: UnencryptedDataAccess
+        expr: |
+          increase(data_access_unencrypted_total{job="emr-backend"}[1h]) > 0
+        for: 0s
+        labels:
+          severity: critical
+          category: compliance
+        annotations:
+          summary: "Unencrypted data access detected"
+          description: "{{ $value }} unencrypted data access attempts"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/unencrypted-access"
+
+      - alert: PermissionEscalation
+        expr: |
+          increase(permission_escalation_attempts_total{job="emr-backend"}[1h]) > 0
+        for: 0s
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Permission escalation attempt detected"
+          description: "{{ $value }} permission escalation attempts"
+          runbook_url: "https://docs.emr-blockchain.com/runbooks/permission-escalation"

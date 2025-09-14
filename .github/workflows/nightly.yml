@@ -1,0 +1,563 @@
+name: Nightly Comprehensive Testing
+
+on:
+  schedule:
+    # Run every night at 2 AM UTC
+    - cron: "0 2 * * *"
+  workflow_dispatch: # Allow manual trigger
+
+env:
+  NODE_VERSION: "18"
+  REGISTRY: ghcr.io
+
+jobs:
+  # Full Security Scan
+  comprehensive-security:
+    name: Comprehensive Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run comprehensive security scan
+        run: |
+          chmod +x scripts/security-scan.sh
+          ./scripts/security-scan.sh all --output-dir security/nightly
+
+      - name: Install OWASP ZAP
+        run: |
+          docker pull owasp/zap2docker-stable
+
+      - name: Start application for ZAP scan
+        run: |
+          npm run build:backend
+          npm run dev:backend &
+          sleep 60
+
+      - name: Run OWASP ZAP full scan
+        run: |
+          docker run -v $(pwd)/security:/zap/wrk/:rw \
+            -t owasp/zap2docker-stable zap-full-scan.py \
+            -t http://host.docker.internal:3000 \
+            -J zap-full-report.json \
+            -r zap-full-report.html || true
+
+      - name: Upload comprehensive security results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-security-results
+          path: security/
+
+      - name: Create security issue if vulnerabilities found
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            // Check for high/critical vulnerabilities
+            let hasHighVulns = false;
+
+            try {
+              // Check Semgrep results
+              if (fs.existsSync('security/nightly/semgrep-results.json')) {
+                const semgrepResults = JSON.parse(fs.readFileSync('security/nightly/semgrep-results.json', 'utf8'));
+                const highSeverity = semgrepResults.results?.filter(r => 
+                  r.extra?.severity === 'ERROR' || r.extra?.severity === 'WARNING'
+                ) || [];
+                
+                if (highSeverity.length > 0) {
+                  hasHighVulns = true;
+                }
+              }
+              
+              // Check ZAP results
+              if (fs.existsSync('security/zap-full-report.json')) {
+                const zapResults = JSON.parse(fs.readFileSync('security/zap-full-report.json', 'utf8'));
+                const highAlerts = zapResults.site?.[0]?.alerts?.filter(a => 
+                  a.riskdesc?.includes('High') || a.riskdesc?.includes('Medium')
+                ) || [];
+                
+                if (highAlerts.length > 0) {
+                  hasHighVulns = true;
+                }
+              }
+              
+              if (hasHighVulns) {
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: `🚨 Security Vulnerabilities Detected - ${new Date().toISOString().split('T')[0]}`,
+                  body: `
+                    ## Security Scan Results
+                    
+                    The nightly security scan has detected potential vulnerabilities that require attention.
+                    
+                    ### Actions Required:
+                    1. Review the security scan artifacts
+                    2. Prioritize findings by severity
+                    3. Create remediation tickets
+                    4. Update security baselines if needed
+                    
+                    ### Scan Details:
+                    - **Date**: ${new Date().toISOString()}
+                    - **Workflow**: Nightly Comprehensive Testing
+                    - **Artifacts**: Check the workflow run for detailed reports
+                    
+                    Please review and address these findings promptly.
+                  `,
+                  labels: ['security', 'high-priority', 'automated']
+                });
+              }
+            } catch (error) {
+              console.log('Error checking security results:', error);
+            }
+
+  # Full Performance Testing
+  comprehensive-performance:
+    name: Comprehensive Performance Testing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Install Artillery
+        run: npm install -g artillery@latest
+
+      - name: Start application stack
+        run: |
+          docker-compose -f docker-compose.test.yml up -d
+          sleep 120
+
+      - name: Run comprehensive performance tests
+        env:
+          BASE_URL: http://localhost:3000
+        run: |
+          # Run k6 load test
+          k6 run performance/k6-load-test.js --out json=performance/k6-load-results.json
+
+          # Run Artillery stress test
+          artillery run performance/artillery-stress-test.yml -o performance/artillery-stress-results.json
+
+          # Run Artillery spike test
+          artillery run performance/artillery-spike-test.yml -o performance/artillery-spike-results.json
+
+      - name: Analyze performance results
+        run: |
+          chmod +x scripts/analyze-performance.sh
+          ./scripts/analyze-performance.sh --input performance/ --output performance/analysis/
+
+      - name: Upload performance results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-performance-results
+          path: performance/
+
+      - name: Stop application stack
+        if: always()
+        run: docker-compose -f docker-compose.test.yml down
+
+      - name: Create performance issue if regression detected
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            try {
+              // Check for performance regressions
+              if (fs.existsSync('performance/analysis/regression-report.json')) {
+                const regressionReport = JSON.parse(fs.readFileSync('performance/analysis/regression-report.json', 'utf8'));
+                
+                if (regressionReport.hasRegressions) {
+                  await github.rest.issues.create({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    title: `⚡ Performance Regression Detected - ${new Date().toISOString().split('T')[0]}`,
+                    body: `
+                      ## Performance Regression Report
+                      
+                      The nightly performance testing has detected performance regressions.
+                      
+                      ### Regressions Detected:
+                      ${regressionReport.regressions.map(r => `- **${r.metric}**: ${r.change} (threshold: ${r.threshold})`).join('\n')}
+                      
+                      ### Actions Required:
+                      1. Review the performance test artifacts
+                      2. Identify the root cause of regressions
+                      3. Optimize affected components
+                      4. Re-run performance tests to verify fixes
+                      
+                      ### Test Details:
+                      - **Date**: ${new Date().toISOString()}
+                      - **Target TPS**: 1000+
+                      - **Latency Threshold**: p95 < 100ms, p99 < 200ms
+                      - **Error Rate Threshold**: < 1%
+                      
+                      Please investigate and address these regressions promptly.
+                    `,
+                    labels: ['performance', 'regression', 'automated']
+                  });
+                }
+              }
+            } catch (error) {
+              console.log('Error checking performance results:', error);
+            }
+
+  # Dependency Updates Check
+  dependency-updates:
+    name: Dependency Updates Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Check for dependency updates
+        run: |
+          npm outdated --json > dependency-updates.json || true
+          cd backend-app && npm outdated --json > ../backend-dependency-updates.json || true
+          cd ../react-app && npm outdated --json > ../frontend-dependency-updates.json || true
+
+      - name: Check for security advisories
+        run: |
+          npm audit --json > security-advisories.json || true
+          cd backend-app && npm audit --json > ../backend-security-advisories.json || true
+          cd ../react-app && npm audit --json > ../frontend-security-advisories.json || true
+
+      - name: Create dependency update issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            let hasUpdates = false;
+            let hasSecurityIssues = false;
+            let updateSummary = '';
+            let securitySummary = '';
+
+            try {
+              // Check for outdated dependencies
+              if (fs.existsSync('dependency-updates.json')) {
+                const updates = JSON.parse(fs.readFileSync('dependency-updates.json', 'utf8'));
+                if (Object.keys(updates).length > 0) {
+                  hasUpdates = true;
+                  updateSummary += '### Root Dependencies\n';
+                  Object.entries(updates).forEach(([pkg, info]) => {
+                    updateSummary += `- **${pkg}**: ${info.current} → ${info.wanted} (latest: ${info.latest})\n`;
+                  });
+                }
+              }
+              
+              // Check for security advisories
+              if (fs.existsSync('security-advisories.json')) {
+                const advisories = JSON.parse(fs.readFileSync('security-advisories.json', 'utf8'));
+                if (advisories.metadata?.vulnerabilities?.total > 0) {
+                  hasSecurityIssues = true;
+                  securitySummary += `### Security Vulnerabilities: ${advisories.metadata.vulnerabilities.total}\n`;
+                  securitySummary += `- **High**: ${advisories.metadata.vulnerabilities.high}\n`;
+                  securitySummary += `- **Moderate**: ${advisories.metadata.vulnerabilities.moderate}\n`;
+                  securitySummary += `- **Low**: ${advisories.metadata.vulnerabilities.low}\n`;
+                }
+              }
+              
+              if (hasUpdates || hasSecurityIssues) {
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: `📦 Dependency Updates Available - ${new Date().toISOString().split('T')[0]}`,
+                  body: `
+                    ## Dependency Update Report
+                    
+                    ${hasSecurityIssues ? '🚨 **Security vulnerabilities detected!**\n\n' + securitySummary + '\n' : ''}
+                    
+                    ${hasUpdates ? updateSummary : 'No dependency updates available.'}
+                    
+                    ### Actions Required:
+                    1. Review the dependency updates
+                    2. Test updates in development environment
+                    3. Update dependencies with security fixes immediately
+                    4. Schedule regular dependency updates
+                    
+                    ### Automated Commands:
+                    \`\`\`bash
+                    # Update dependencies
+                    npm update
+                    
+                    # Fix security vulnerabilities
+                    npm audit fix
+                    
+                    # Check for breaking changes
+                    npm run test
+                    \`\`\`
+                  `,
+                  labels: hasSecurityIssues ? ['dependencies', 'security', 'high-priority'] : ['dependencies', 'maintenance']
+                });
+              }
+            } catch (error) {
+              console.log('Error checking dependencies:', error);
+            }
+
+  # Bundle Analysis
+  bundle-analysis:
+    name: Bundle Size Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run bundle analysis
+        run: |
+          chmod +x scripts/analyze-bundle.js
+          node scripts/analyze-bundle.js
+
+      - name: Upload bundle analysis results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-analysis-results
+          path: performance/bundle-analysis/
+
+  # Database Performance Analysis
+  database-analysis:
+    name: Database Performance Analysis
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test_root_password
+          MYSQL_DATABASE: blockchain_emr_test
+          MYSQL_USER: test_user
+          MYSQL_PASSWORD: test_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Wait for MySQL
+        run: timeout 60 bash -c 'until nc -z localhost 3306; do sleep 1; done'
+
+      - name: Run database optimizations
+        env:
+          TEST_MYSQL_HOST: localhost
+          TEST_MYSQL_PORT: 3306
+          TEST_MYSQL_USER: test_user
+          TEST_MYSQL_PASSWORD: test_password
+          TEST_MYSQL_DATABASE: blockchain_emr_test
+        run: |
+          # Apply database optimizations
+          mysql -h localhost -P 3306 -u test_user -ptest_password blockchain_emr_test < backend-app/src/database/optimizations/indexes.sql
+
+          # Run performance analysis
+          chmod +x scripts/analyze-database-performance.sh
+          ./scripts/analyze-database-performance.sh
+
+      - name: Upload database analysis results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-analysis-results
+          path: performance/database-analysis/
+
+  # Generate Nightly Report
+  nightly-report:
+    name: Generate Nightly Report
+    runs-on: ubuntu-latest
+    needs:
+      [
+        comprehensive-security,
+        comprehensive-performance,
+        dependency-updates,
+        bundle-analysis,
+        database-analysis,
+      ]
+    if: always()
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Generate comprehensive report
+        run: |
+          mkdir -p reports
+
+          cat > reports/nightly-report.md << 'EOF'
+          # Nightly Testing Report - $(date +%Y-%m-%d)
+
+          ## Executive Summary
+
+          This report summarizes the results of comprehensive nightly testing for the Blockchain EMR system.
+
+          ## Test Results
+
+          ### Security Scanning
+          - **Status**: ${{ needs.comprehensive-security.result }}
+          - **Details**: Check security artifacts for vulnerability reports
+
+          ### Performance Testing
+          - **Status**: ${{ needs.comprehensive-performance.result }}
+          - **Target**: 1000+ TPS, p95 < 100ms, error rate < 1%
+          - **Details**: Check performance artifacts for detailed metrics
+
+          ### Dependency Updates
+          - **Status**: ${{ needs.dependency-updates.result }}
+          - **Details**: Check for security advisories and available updates
+
+          ### Bundle Analysis
+          - **Status**: ${{ needs.bundle-analysis.result }}
+          - **Details**: Frontend bundle size and optimization opportunities
+
+          ### Database Analysis
+          - **Status**: ${{ needs.database-analysis.result }}
+          - **Details**: Query performance and index optimization
+
+          ## Recommendations
+
+          1. Review any failed test results immediately
+          2. Address security vulnerabilities with high priority
+          3. Monitor performance trends and investigate regressions
+          4. Update dependencies regularly, especially security fixes
+          5. Optimize bundle size and database queries as needed
+
+          ## Next Steps
+
+          - Create tickets for any issues found
+          - Schedule remediation work
+          - Update monitoring baselines
+          - Plan next optimization cycle
+          EOF
+
+      - name: Upload nightly report
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-report
+          path: reports/
+
+      - name: Notify team of nightly results
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const results = {
+              security: '${{ needs.comprehensive-security.result }}',
+              performance: '${{ needs.comprehensive-performance.result }}',
+              dependencies: '${{ needs.dependency-updates.result }}',
+              bundle: '${{ needs.bundle-analysis.result }}',
+              database: '${{ needs.database-analysis.result }}'
+            };
+
+            const failed = Object.entries(results).filter(([_, result]) => result === 'failure');
+            const hasFailures = failed.length > 0;
+
+            const title = hasFailures 
+              ? `🚨 Nightly Testing - ${failed.length} Failures Detected`
+              : `✅ Nightly Testing - All Checks Passed`;
+
+            let body = `## Nightly Testing Results - ${new Date().toISOString().split('T')[0]}\n\n`;
+
+            Object.entries(results).forEach(([test, result]) => {
+              const icon = result === 'success' ? '✅' : result === 'failure' ? '❌' : '⚠️';
+              body += `${icon} **${test.charAt(0).toUpperCase() + test.slice(1)}**: ${result}\n`;
+            });
+
+            if (hasFailures) {
+              body += '\n### ⚠️ Action Required\n';
+              body += 'Please review the failed tests and address any issues found.\n';
+              body += 'Check the workflow artifacts for detailed reports.\n';
+            }
+
+            body += '\n### 📊 Artifacts Available\n';
+            body += '- Security scan results\n';
+            body += '- Performance test reports\n';
+            body += '- Dependency update analysis\n';
+            body += '- Bundle size analysis\n';
+            body += '- Database performance metrics\n';
+
+            // Create or update pinned issue for nightly results
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'nightly-results',
+              state: 'open'
+            });
+
+            if (issues.data.length > 0) {
+              // Update existing issue
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issues.data[0].number,
+                title: title,
+                body: body
+              });
+            } else {
+              // Create new issue
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body,
+                labels: ['nightly-results', 'automated']
+              });
+            }

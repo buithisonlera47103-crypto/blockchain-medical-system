@@ -1,0 +1,224 @@
+name: 测试工作流
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 运行代码检查
+        run: npm run lint
+        continue-on-error: true
+
+      - name: 运行单元测试
+        run: npm run test:unit
+
+      - name: 运行集成测试
+        run: npm run test:integration
+
+      - name: 运行安全测试
+        run: npm run test:security
+
+      - name: 生成测试覆盖率
+        run: npm run test:coverage
+
+      - name: 上传覆盖率报告到 Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+      - name: 上传测试结果
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: test-results-${{ matrix.node-version }}
+          path: |
+            test-results/
+            coverage/
+
+      - name: 发布测试结果
+        uses: dorny/test-reporter@v1
+        if: success() || failure()
+        with:
+          name: Jest Tests (${{ matrix.node-version }})
+          path: "test-results/*.xml"
+          reporter: jest-junit
+
+  e2e-test:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: "npm"
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建应用
+        run: npm run build
+
+      - name: 启动应用服务器
+        run: |
+          npm run start &
+          sleep 30
+        env:
+          CI: true
+
+      - name: 等待服务器启动
+        run: |
+          timeout 60 bash -c 'until curl -f http://localhost:3000; do sleep 2; done'
+
+      - name: 运行E2E测试
+        run: npm run test:e2e
+        env:
+          CI: true
+          REACT_APP_TEST_URL: http://localhost:3000
+
+      - name: 上传E2E测试截图
+        uses: actions/upload-artifact@v3
+        if: failure()
+        with:
+          name: e2e-screenshots
+          path: test/screenshots/
+
+  security-audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: "npm"
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 运行安全审计
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
+
+      - name: 运行依赖检查
+        run: npx audit-ci --moderate
+        continue-on-error: true
+
+      - name: 检查过时依赖
+        run: npx npm-check-updates --errorLevel 2
+        continue-on-error: true
+
+  performance-test:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: "npm"
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建应用
+        run: npm run build
+
+      - name: 分析构建大小
+        run: |
+          npm install -g bundlesize
+          bundlesize
+        continue-on-error: true
+
+      - name: 运行Lighthouse CI
+        run: |
+          npm install -g @lhci/cli
+          lhci autorun
+        continue-on-error: true
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+
+  deploy-preview:
+    runs-on: ubuntu-latest
+    needs: [test, e2e-test]
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: "npm"
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建应用
+        run: npm run build
+
+      - name: 部署预览
+        uses: netlify/actions/cli@master
+        with:
+          args: deploy --dir=build --functions=netlify/functions
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: [test, e2e-test, security-audit]
+    if: always()
+
+    steps:
+      - name: 通知测试结果
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: "#development"
+          text: |
+            测试工作流完成
+            - 单元测试: ${{ needs.test.result }}
+            - E2E测试: ${{ needs.e2e-test.result }}
+            - 安全审计: ${{ needs.security-audit.result }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: always()

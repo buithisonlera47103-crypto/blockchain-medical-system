@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: emr-config-production
+  namespace: emr-production
+data:
+  NODE_ENV: "production"
+  DB_HOST: "mysql-service-production"
+  DB_PORT: "3306"
+  DB_NAME: "emr_blockchain"
+  REDIS_HOST: "redis-service-production"
+  REDIS_PORT: "6379"
+  IPFS_HOST: "ipfs-service-production"
+  IPFS_PORT: "5001"
+  LOG_LEVEL: "info"
+  REACT_APP_API_URL: "https://api.emr-blockchain.com"
+  REACT_APP_TITLE: "区块链EMR系统"

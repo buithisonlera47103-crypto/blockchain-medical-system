@@ -1,0 +1,173 @@
+# Kubernetes Deployment for Fabric Orderer
+# Production-grade orderer deployment with persistence and monitoring
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orderer-config
+  namespace: emr-fabric-network
+data:
+  FABRIC_LOGGING_SPEC: "INFO"
+  ORDERER_GENERAL_LISTENADDRESS: "0.0.0.0"
+  ORDERER_GENERAL_LISTENPORT: "7050"
+  ORDERER_GENERAL_LOCALMSPID: "OrdererMSP"
+  ORDERER_GENERAL_LOCALMSPDIR: "/var/hyperledger/orderer/msp"
+  ORDERER_GENERAL_TLS_ENABLED: "true"
+  ORDERER_GENERAL_BOOTSTRAPMETHOD: "none"
+  ORDERER_CHANNELPARTICIPATION_ENABLED: "true"
+  ORDERER_ADMIN_TLS_ENABLED: "true"
+  ORDERER_ADMIN_LISTENADDRESS: "0.0.0.0:7053"
+  ORDERER_OPERATIONS_LISTENADDRESS: "0.0.0.0:17050"
+  ORDERER_METRICS_PROVIDER: "prometheus"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orderer-service
+  namespace: emr-fabric-network
+  labels:
+    app: orderer
+    component: fabric-orderer
+spec:
+  type: ClusterIP
+  ports:
+  - name: orderer
+    port: 7050
+    targetPort: 7050
+    protocol: TCP
+  - name: admin
+    port: 7053
+    targetPort: 7053
+    protocol: TCP
+  - name: operations
+    port: 17050
+    targetPort: 17050
+    protocol: TCP
+  selector:
+    app: orderer
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: orderer-pvc
+  namespace: emr-fabric-network
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: fast-ssd
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orderer-deployment
+  namespace: emr-fabric-network
+  labels:
+    app: orderer
+    component: fabric-orderer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orderer
+  template:
+    metadata:
+      labels:
+        app: orderer
+        component: fabric-orderer
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: orderer
+        image: hyperledger/fabric-orderer:2.5
+        imagePullPolicy: IfNotPresent
+        command: ["orderer"]
+        envFrom:
+        - configMapRef:
+            name: orderer-config
+        ports:
+        - containerPort: 7050
+          name: orderer
+        - containerPort: 7053
+          name: admin
+        - containerPort: 17050
+          name: operations
+        volumeMounts:
+        - name: orderer-data
+          mountPath: /var/hyperledger/production/orderer
+        - name: orderer-msp
+          mountPath: /var/hyperledger/orderer/msp
+          readOnly: true
+        - name: orderer-tls
+          mountPath: /var/hyperledger/orderer/tls
+          readOnly: true
+        resources:
+          requests:
+            cpu: "1"
+            memory: "2Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 17050
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 17050
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+      - name: orderer-data
+        persistentVolumeClaim:
+          claimName: orderer-pvc
+      - name: orderer-msp
+        secret:
+          secretName: orderer-msp-secret
+      - name: orderer-tls
+        secret:
+          secretName: orderer-tls-secret
+      nodeSelector:
+        node-type: fabric-orderer
+      tolerations:
+      - key: "fabric-orderer"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orderer-external
+  namespace: emr-fabric-network
+  labels:
+    app: orderer
+    component: fabric-orderer
+spec:
+  type: LoadBalancer
+  ports:
+  - name: orderer
+    port: 7050
+    targetPort: 7050
+    protocol: TCP
+  selector:
+    app: orderer
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: orderer-pdb
+  namespace: emr-fabric-network
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: orderer

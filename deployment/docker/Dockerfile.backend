@@ -1,0 +1,55 @@
+# 后端服务Dockerfile
+# 基于Node.js 20 LTS镜像
+FROM node:20-alpine AS builder
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制package文件
+COPY backend-app/package*.json ./
+
+# 安装依赖
+RUN npm ci --only=production && npm cache clean --force
+
+# 复制源代码
+COPY backend-app/ .
+
+# 构建TypeScript代码
+RUN npm run build
+
+# 生产环境镜像
+FROM node:20-alpine AS production
+
+# 创建非root用户
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S backend -u 1001
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制package文件
+COPY backend-app/package*.json ./
+
+# 安装生产依赖
+RUN npm ci --only=production && npm cache clean --force
+
+# 从builder阶段复制构建产物
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/connection-org1.json ./
+
+# 创建必要的目录
+RUN mkdir -p logs wallet && \
+    chown -R backend:nodejs /app
+
+# 切换到非root用户
+USER backend
+
+# 暴露端口
+EXPOSE 3001
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:3001/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"
+
+# 启动应用
+CMD ["npm", "start"]

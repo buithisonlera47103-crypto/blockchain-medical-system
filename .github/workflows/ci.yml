@@ -1,0 +1,442 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  NODE_VERSION: "18"
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Code Quality and Linting
+  code-quality:
+    name: Code Quality & Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: |
+          npm run lint:backend
+          npm run lint:frontend
+
+      - name: Run Prettier check
+        run: npm run format:check
+
+      - name: TypeScript type checking
+        run: npm run type-check
+
+      - name: Upload ESLint results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eslint-results
+          path: |
+            backend-app/eslint-report.json
+            react-app/eslint-report.json
+
+  # Unit and Integration Tests
+  test:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test_root_password
+          MYSQL_DATABASE: blockchain_emr_test
+          MYSQL_USER: test_user
+          MYSQL_PASSWORD: test_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Wait for services
+        run: |
+          timeout 60 bash -c 'until nc -z localhost 3306; do sleep 1; done'
+          timeout 60 bash -c 'until nc -z localhost 6379; do sleep 1; done'
+
+      - name: Run unit tests
+        env:
+          NODE_ENV: test
+          TEST_MYSQL_HOST: localhost
+          TEST_MYSQL_PORT: 3306
+          TEST_MYSQL_USER: test_user
+          TEST_MYSQL_PASSWORD: test_password
+          TEST_MYSQL_DATABASE: blockchain_emr_test
+          TEST_REDIS_HOST: localhost
+          TEST_REDIS_PORT: 6379
+        run: npm run test:coverage
+
+      - name: Run integration tests
+        env:
+          NODE_ENV: test
+          TEST_MYSQL_HOST: localhost
+          TEST_MYSQL_PORT: 3306
+          TEST_MYSQL_USER: test_user
+          TEST_MYSQL_PASSWORD: test_password
+          TEST_MYSQL_DATABASE: blockchain_emr_test
+          TEST_REDIS_HOST: localhost
+          TEST_REDIS_PORT: 6379
+        run: npm --prefix backend-app run test:integration
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          files: |
+            backend-app/coverage/lcov.info
+            react-app/coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            backend-app/coverage/
+            react-app/coverage/
+            test-results/
+
+  # Security Scanning
+  security:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: |
+          npm audit --audit-level moderate --json > security/npm-audit.json || true
+          npm --prefix backend-app audit --audit-level moderate --json > security/backend-npm-audit.json || true
+          npm --prefix react-app audit --audit-level moderate --json > security/frontend-npm-audit.json || true
+
+      - name: Install Semgrep
+        run: python3 -m pip install semgrep
+
+      - name: Run Semgrep
+        run: |
+          semgrep --config=auto --config=p/owasp-top-ten --config=p/security-audit \
+            --json --output=security/semgrep-results.json \
+            --sarif --sarif-output=security/semgrep-results.sarif \
+            --severity=ERROR --severity=WARNING \
+            --exclude="node_modules" --exclude="dist" --exclude="build" \
+            --exclude="*.test.ts" --exclude="*.spec.ts" \
+            . || true
+
+      - name: Install Gitleaks
+        run: |
+          wget -O gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks_8.18.0_linux_x64.tar.gz
+          tar -xzf gitleaks.tar.gz
+          sudo mv gitleaks /usr/local/bin/
+
+      - name: Run Gitleaks
+        run: |
+          gitleaks detect --config=.gitleaks.toml --source=. \
+            --report-format=json --report-path=security/gitleaks-results.json \
+            --verbose || true
+
+      - name: Upload SARIF file
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: security/semgrep-results.sarif
+
+      - name: Upload security scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-results
+          path: security/
+
+  # Performance Testing
+  performance:
+    name: Performance Testing
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Start application
+        run: |
+          npm run build:backend
+          npm run dev:backend &
+          sleep 30
+
+      - name: Run performance smoke test
+        env:
+          BASE_URL: http://localhost:3000
+        run: |
+          k6 run performance/k6-smoke-test.js --out json=performance/k6-results.json
+
+      - name: Upload performance results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-results
+          path: performance/
+
+  # Build and Container Scan
+  build:
+    name: Build & Container Scan
+    runs-on: ubuntu-latest
+    needs: [code-quality, test, security]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build applications
+        run: |
+          npm run build:backend
+          npm run build:frontend
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker images
+        run: |
+          docker build -t blockchain-emr-backend:${{ github.sha }} backend-app/
+          docker build -t blockchain-emr-frontend:${{ github.sha }} react-app/
+
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install trivy
+
+      - name: Run Trivy vulnerability scanner
+        run: |
+          trivy image --format json --output security/trivy-backend.json blockchain-emr-backend:${{ github.sha }} || true
+          trivy image --format json --output security/trivy-frontend.json blockchain-emr-frontend:${{ github.sha }} || true
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            backend-app/dist/
+            react-app/build/
+            security/trivy-*.json
+
+  # E2E Tests
+  e2e:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright
+        run: npx playwright install --with-deps
+
+      - name: Start application stack
+        run: |
+          docker-compose -f docker-compose.test.yml up -d
+          sleep 60
+
+      - name: Run E2E tests
+        env:
+          BASE_URL: http://localhost:3000
+        run: npx playwright test
+
+      - name: Upload E2E test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: |
+            test-results/
+            playwright-report/
+
+      - name: Stop application stack
+        if: always()
+        run: docker-compose -f docker-compose.test.yml down
+
+  # Quality Gate
+  quality-gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    needs: [code-quality, test, security, performance, build]
+    if: always()
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Check quality gate
+        run: |
+          echo "Checking quality gate criteria..."
+
+          # Check if all required jobs passed
+          if [[ "${{ needs.code-quality.result }}" != "success" ]]; then
+            echo "❌ Code quality checks failed"
+            exit 1
+          fi
+
+          if [[ "${{ needs.test.result }}" != "success" ]]; then
+            echo "❌ Tests failed"
+            exit 1
+          fi
+
+          if [[ "${{ needs.security.result }}" != "success" ]]; then
+            echo "❌ Security checks failed"
+            exit 1
+          fi
+
+          if [[ "${{ needs.build.result }}" != "success" ]]; then
+            echo "❌ Build failed"
+            exit 1
+          fi
+
+          # Performance check (only for PRs)
+          if [[ "${{ github.event_name }}" == "pull_request" && "${{ needs.performance.result }}" != "success" ]]; then
+            echo "❌ Performance tests failed"
+            exit 1
+          fi
+
+          echo "✅ All quality gate criteria passed"
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            let comment = '## 🚀 CI/CD Pipeline Results\n\n';
+
+            // Add status for each job
+            const jobs = [
+              { name: 'Code Quality', result: '${{ needs.code-quality.result }}' },
+              { name: 'Tests', result: '${{ needs.test.result }}' },
+              { name: 'Security', result: '${{ needs.security.result }}' },
+              { name: 'Performance', result: '${{ needs.performance.result }}' },
+              { name: 'Build', result: '${{ needs.build.result }}' }
+            ];
+
+            jobs.forEach(job => {
+              const icon = job.result === 'success' ? '✅' : job.result === 'failure' ? '❌' : '⚠️';
+              comment += `${icon} **${job.name}**: ${job.result}\n`;
+            });
+
+            comment += '\n### 📊 Quality Metrics\n';
+            comment += '- Code Coverage: Check artifacts for detailed reports\n';
+            comment += '- Security Scan: Check artifacts for vulnerability reports\n';
+            comment += '- Performance: Check artifacts for performance test results\n';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  # Notify on failure
+  notify-failure:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs: [quality-gate]
+    if: failure()
+    steps:
+      - name: Notify team
+        run: |
+          echo "CI/CD pipeline failed. Notification would be sent to team."
+          # Add actual notification logic here (Slack, email, etc.)

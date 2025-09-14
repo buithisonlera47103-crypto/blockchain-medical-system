@@ -1,0 +1,392 @@
+name: Quality Assurance Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  NODE_VERSION: "18.x"
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Static Analysis and Linting
+  static-analysis:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: |
+            backend-app/package-lock.json
+            react-app/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: ./backend-app
+        run: npm --prefix backend-app ci
+
+      - name: Install frontend dependencies
+        working-directory: ./react-app
+        run: npm ci
+
+      - name: Run ESLint (Backend)
+        working-directory: ./backend-app
+        run: npm --prefix backend-app run lint:report
+
+      - name: Run ESLint (Frontend)
+        working-directory: ./react-app
+        run: npm run lint:report
+
+      - name: TypeScript type checking (Backend)
+        working-directory: ./backend-app
+        run: npm --prefix backend-app run type-check
+
+      - name: TypeScript type checking (Frontend)
+        working-directory: ./react-app
+        run: npm run type-check
+
+      - name: Upload lint reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lint-reports
+          path: |
+            backend-app/eslint-report.json
+            react-app/eslint-report.json
+
+  # Security Scanning
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        working-directory: ./backend-app
+        run: npm --prefix backend-app ci
+
+      - name: Run npm audit
+        working-directory: ./backend-app
+        run: npm --prefix backend-app run security:report
+        continue-on-error: true
+
+      - name: Run Snyk security scan
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high --file=backend-app/package.json
+
+      - name: Run CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          languages: javascript
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-reports
+          path: |
+            backend-app/security-audit.json
+
+  # Unit and Integration Tests
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test_password
+          MYSQL_DATABASE: emr_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: backend-app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./backend-app
+        run: npm --prefix backend-app ci
+
+      - name: Wait for MySQL
+        run: |
+          until mysqladmin ping -h"127.0.0.1" -P3306 -uroot -ptest_password --silent; do
+            echo 'Waiting for MySQL...'
+            sleep 2
+          done
+
+      - name: Setup test database
+        run: |
+          mysql -h127.0.0.1 -P3306 -uroot -ptest_password -e "CREATE DATABASE IF NOT EXISTS emr_test;"
+          mysql -h127.0.0.1 -P3306 -uroot -ptest_password emr_test < backend-app/database/schema.sql
+
+      - name: Run unit tests
+        working-directory: ./backend-app
+        run: npm --prefix backend-app run test:unit
+        env:
+          NODE_ENV: test
+          DATABASE_URL: mysql://root:test_password@127.0.0.1:3306/emr_test
+          REDIS_URL: redis://127.0.0.1:6379
+
+      - name: Run integration tests
+        working-directory: ./backend-app
+        run: npm --prefix backend-app run test:integration
+        env:
+          NODE_ENV: test
+          DATABASE_URL: mysql://root:test_password@127.0.0.1:3306/emr_test
+          REDIS_URL: redis://127.0.0.1:6379
+
+      - name: Generate coverage report
+        working-directory: ./backend-app
+        run: npm --prefix backend-app run test:coverage
+        env:
+          NODE_ENV: test
+          DATABASE_URL: mysql://root:test_password@127.0.0.1:3306/emr_test
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./backend-app/coverage/lcov.info
+          flags: backend
+          name: backend-coverage
+
+      - name: Upload test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: |
+            backend-app/coverage/
+            backend-app/test-results.xml
+
+  # Performance Testing
+  performance-test:
+    name: Performance Test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        working-directory: ./backend-app
+        run: npm --prefix backend-app ci
+
+      - name: Build application
+        working-directory: ./backend-app
+        run: npm --prefix backend-app run build
+
+      - name: Start application
+        working-directory: ./backend-app
+        run: |
+          npm --prefix backend-app start &
+          sleep 10
+        env:
+          NODE_ENV: test
+
+      - name: Run performance tests
+        working-directory: ./backend-app
+        run: npm --prefix backend-app run test:performance
+
+      - name: Run load tests
+        working-directory: ./backend-app
+        run: npm --prefix backend-app run load-test
+
+      - name: Upload performance reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-reports
+          path: |
+            backend-app/performance-report.json
+
+  # Quality Gates
+  quality-gates:
+    name: Quality Gates
+    runs-on: ubuntu-latest
+    needs: [static-analysis, security-scan, test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        working-directory: ./backend-app
+        run: npm --prefix backend-app ci
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Run quality gates
+        working-directory: ./backend-app
+        run: npm --prefix backend-app run quality:check
+
+      - name: Upload quality report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quality-gates-report
+          path: backend-app/quality-gates-report.json
+
+      - name: Comment PR with quality report
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = './backend-app/quality-gates-report.json';
+
+            if (fs.existsSync(path)) {
+              const report = JSON.parse(fs.readFileSync(path, 'utf8'));
+              
+              const comment = `## 📊 Quality Gates Report
+              
+              **Status**: ${report.failed > 0 ? '❌ Failed' : '✅ Passed'}
+              
+              - ✅ Passed: ${report.passed}
+              - ⚠️ Warnings: ${report.warnings}
+              - ❌ Failed: ${report.failed}
+              
+              ${report.failed > 0 ? '**Deployment blocked due to quality gate failures.**' : '**Ready for deployment.**'}
+              `;
+              
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            }
+
+  # Build and Push Docker Images
+  build-and-push:
+    name: Build and Push Images
+    runs-on: ubuntu-latest
+    needs: [quality-gates]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend-app
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./react-app
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # Deploy to Staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to staging
+        run: |
+          echo "Deploying to staging environment..."
+          # Add actual deployment commands here
+
+  # Deploy to Production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to production
+        run: |
+          echo "Deploying to production environment..."
+          # Add actual deployment commands here

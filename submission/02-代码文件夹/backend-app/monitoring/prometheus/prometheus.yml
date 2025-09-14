@@ -1,0 +1,239 @@
+# Prometheus Configuration for EMR Blockchain System
+# Comprehensive metrics collection from all system components
+# Optimized for healthcare compliance and operational excellence
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'emr-blockchain-production'
+    environment: 'production'
+
+rule_files:
+  - "rules/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # Prometheus Self-Monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # System Metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 15s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '(.+)'
+        replacement: 'emr-production-server'
+
+  # Container Metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Database Metrics
+  - job_name: 'postgres-exporter'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Cache Metrics
+  - job_name: 'redis-exporter'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Fabric Network Metrics
+  - job_name: 'fabric-orderer'
+    static_configs:
+      - targets: 
+        - 'orderer.emr.com:17050'
+    scrape_interval: 10s
+    metrics_path: /metrics
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+
+  - job_name: 'fabric-peer-hospital1'
+    static_configs:
+      - targets: 
+        - 'peer0.hospital1.emr.com:17051'
+        - 'peer1.hospital1.emr.com:18051'
+    scrape_interval: 10s
+    metrics_path: /metrics
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+
+  - job_name: 'fabric-peer-hospital2'
+    static_configs:
+      - targets: 
+        - 'peer0.hospital2.emr.com:19051'
+        - 'peer1.hospital2.emr.com:20051'
+    scrape_interval: 10s
+    metrics_path: /metrics
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+
+  - job_name: 'fabric-peer-regulator'
+    static_configs:
+      - targets: 
+        - 'peer0.regulator.emr.com:21051'
+    scrape_interval: 10s
+    metrics_path: /metrics
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+
+  - job_name: 'fabric-ca'
+    static_configs:
+      - targets: 
+        - 'ca.hospital1.emr.com:17054'
+        - 'ca.hospital2.emr.com:18054'
+        - 'ca.regulator.emr.com:19054'
+    scrape_interval: 30s
+    metrics_path: /metrics
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+
+  # IPFS Cluster Metrics
+  - job_name: 'ipfs-cluster'
+    static_configs:
+      - targets: 
+        - 'cluster0:8888'
+        - 'cluster1:8888'
+        - 'cluster2:8888'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  - job_name: 'ipfs-nodes'
+    static_configs:
+      - targets: ['ipfs-exporter:9401']
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Application Metrics
+  - job_name: 'emr-backend'
+    static_configs:
+      - targets: ['host.docker.internal:3001']
+    scrape_interval: 10s
+    metrics_path: /api/v1/metrics
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+
+  - job_name: 'emr-frontend'
+    static_configs:
+      - targets: ['host.docker.internal:3000']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # External Service Monitoring
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - https://localhost:3001/api/v1/health
+        - http://localhost:3000/health
+        - http://localhost:8090/health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: 'blackbox-tcp'
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets:
+        - localhost:5432  # PostgreSQL
+        - localhost:6379  # Redis
+        - localhost:7050  # Fabric Orderer
+        - localhost:9094  # IPFS Cluster
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # Monitoring Stack Self-Monitoring
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['grafana:3000']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Custom Business Metrics
+  - job_name: 'emr-business-metrics'
+    static_configs:
+      - targets: ['host.docker.internal:3001']
+    scrape_interval: 60s
+    metrics_path: /api/v1/metrics/business
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+
+  # Security Metrics
+  - job_name: 'emr-security-metrics'
+    static_configs:
+      - targets: ['host.docker.internal:3001']
+    scrape_interval: 30s
+    metrics_path: /api/v1/metrics/security
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+
+  # Compliance Metrics
+  - job_name: 'emr-compliance-metrics'
+    static_configs:
+      - targets: ['host.docker.internal:3001']
+    scrape_interval: 300s  # 5 minutes
+    metrics_path: /api/v1/metrics/compliance
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+
+# Remote write configuration for long-term storage
+remote_write:
+  - url: "http://localhost:9201/api/v1/write"
+    queue_config:
+      max_samples_per_send: 1000
+      max_shards: 200
+      capacity: 2500

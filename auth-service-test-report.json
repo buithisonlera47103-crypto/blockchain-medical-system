@@ -1,0 +1,23 @@
+{
+  "timestamp": "2025-09-13T09:30:32.737Z",
+  "testConfig": {
+    "host": "localhost",
+    "port": 3001,
+    "protocol": "http"
+  },
+  "results": {
+    "serverConnection": true,
+    "userRegistration": true,
+    "userLogin": true,
+    "tokenValidation": true,
+    "permissionControl": true,
+    "tokenRefresh": false
+  },
+  "summary": {
+    "totalTests": 6,
+    "passedTests": 5,
+    "failedTests": 1,
+    "successRate": 83
+  },
+  "recommendations": []
+}

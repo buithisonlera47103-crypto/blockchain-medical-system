@@ -1,0 +1,591 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  NODE_VERSION: "18.x"
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ===== 代码质量检查 =====
+  code-quality:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      # 后端代码质量检查
+      - name: Install backend dependencies
+        working-directory: ./backend-app
+        run: npm --prefix backend-app ci
+
+      - name: Backend ESLint check
+        working-directory: ./backend-app
+        run: npm --prefix backend-app run lint
+
+      - name: Backend TypeScript check
+        working-directory: ./backend-app
+        run: npm --prefix backend-app run type-check
+
+      - name: Backend security audit
+        working-directory: ./backend-app
+        run: npm --prefix backend-app audit --audit-level=high
+        continue-on-error: true
+
+      # 前端代码质量检查
+      - name: Install frontend dependencies
+        working-directory: ./react-app
+        run: npm ci
+
+      - name: Frontend ESLint check
+        working-directory: ./react-app
+        run: npm run lint
+
+      - name: Frontend TypeScript check
+        working-directory: ./react-app
+        run: npm run type-check
+
+      - name: Frontend security audit
+        working-directory: ./react-app
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      # SonarQube代码质量分析
+      - name: SonarQube Scan
+        uses: sonarqube-quality-gate-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        continue-on-error: true
+
+  # ===== 后端测试 =====
+  backend-tests:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    needs: code-quality
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test_password
+          MYSQL_DATABASE: emr_blockchain_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        working-directory: ./backend-app
+        run: npm --prefix backend-app ci
+
+      - name: Wait for MySQL
+        run: |
+          while ! mysqladmin ping -h"127.0.0.1" -P3306 -u root -ptest_password --silent; do
+            echo "Waiting for MySQL..."
+            sleep 2
+          done
+
+      - name: Setup test database
+        working-directory: ./backend-app
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -u root -ptest_password -e "CREATE DATABASE IF NOT EXISTS emr_blockchain_test;"
+          mysql -h 127.0.0.1 -P 3306 -u root -ptest_password emr_blockchain_test < src/database/schema.sql
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: test_password
+          DB_NAME: emr_blockchain_test
+
+      - name: Run unit tests
+        working-directory: ./backend-app
+        run: npm --prefix backend-app run test:unit
+        env:
+          NODE_ENV: test
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: test_password
+          DB_NAME: emr_blockchain_test
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+
+      - name: Run integration tests
+        working-directory: ./backend-app
+        run: npm --prefix backend-app run test:integration
+        env:
+          NODE_ENV: test
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: test_password
+          DB_NAME: emr_blockchain_test
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+
+      - name: Generate test coverage
+        working-directory: ./backend-app
+        run: npm --prefix backend-app run test:coverage
+        env:
+          NODE_ENV: test
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: test_password
+          DB_NAME: emr_blockchain_test
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./backend-app/coverage/lcov.info
+          flags: backend
+          name: backend-coverage
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # ===== 前端测试 =====
+  frontend-tests:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    needs: code-quality
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        working-directory: ./react-app
+        run: npm ci
+
+      - name: Run unit tests
+        working-directory: ./react-app
+        run: npm run test:unit
+
+      - name: Run component tests
+        working-directory: ./react-app
+        run: npm run test:components
+
+      - name: Generate test coverage
+        working-directory: ./react-app
+        run: npm run test:coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./react-app/coverage/lcov.info
+          flags: frontend
+          name: frontend-coverage
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # ===== E2E测试 =====
+  e2e-tests:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests]
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test_password
+          MYSQL_DATABASE: emr_blockchain_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install backend dependencies
+        working-directory: ./backend-app
+        run: npm --prefix backend-app ci
+
+      - name: Install frontend dependencies
+        working-directory: ./react-app
+        run: npm ci
+
+      - name: Setup test database
+        working-directory: ./backend-app
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -u root -ptest_password -e "CREATE DATABASE IF NOT EXISTS emr_blockchain_test;"
+          mysql -h 127.0.0.1 -P 3306 -u root -ptest_password emr_blockchain_test < src/database/schema.sql
+
+      - name: Start backend server
+        working-directory: ./backend-app
+        run: |
+          npm --prefix backend-app run build
+          npm --prefix backend-app start &
+          sleep 10
+        env:
+          NODE_ENV: test
+          PORT: 3001
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: test_password
+          DB_NAME: emr_blockchain_test
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+
+      - name: Build frontend
+        working-directory: ./react-app
+        run: |
+          npm run build
+          npm install -g serve
+          serve -s build -l 3000 &
+          sleep 5
+        env:
+          REACT_APP_API_URL: http://localhost:3001
+
+      - name: Install Playwright
+        working-directory: ./react-app
+        run: npx playwright install --with-deps
+
+      - name: Run E2E tests
+        working-directory: ./react-app
+        run: npm run test:e2e
+        env:
+          BASE_URL: http://localhost:3000
+          API_URL: http://localhost:3001
+
+      - name: Upload E2E test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-test-results
+          path: react-app/test-results/
+          retention-days: 30
+
+  # ===== 构建Docker镜像 =====
+  build-images:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    outputs:
+      backend-image: ${{ steps.backend-meta.outputs.tags }}
+      frontend-image: ${{ steps.frontend-meta.outputs.tags }}
+      backend-digest: ${{ steps.backend-build.outputs.digest }}
+      frontend-digest: ${{ steps.frontend-build.outputs.digest }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 构建后端镜像
+      - name: Extract backend metadata
+        id: backend-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push backend image
+        id: backend-build
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend-app
+          push: true
+          tags: ${{ steps.backend-meta.outputs.tags }}
+          labels: ${{ steps.backend-meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      # 构建前端镜像
+      - name: Extract frontend metadata
+        id: frontend-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push frontend image
+        id: frontend-build
+        uses: docker/build-push-action@v5
+        with:
+          context: ./react-app
+          push: true
+          tags: ${{ steps.frontend-meta.outputs.tags }}
+          labels: ${{ steps.frontend-meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+  # ===== 安全扫描 =====
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: build-images
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Run Trivy vulnerability scanner (Backend)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ needs.build-images.outputs.backend-image }}
+          format: "sarif"
+          output: "backend-trivy-results.sarif"
+
+      - name: Run Trivy vulnerability scanner (Frontend)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ needs.build-images.outputs.frontend-image }}
+          format: "sarif"
+          output: "frontend-trivy-results.sarif"
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "."
+
+  # ===== Staging部署 =====
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [e2e-tests, build-images, security-scan]
+    if: |
+      (github.ref == 'refs/heads/develop' && github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment:
+      name: staging
+      url: https://staging.emr-blockchain.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG_STAGING }}
+
+      - name: Replace image tags in k8s manifests
+        run: |
+          sed -i 's|IMAGE_TAG_BACKEND|${{ needs.build-images.outputs.backend-image }}|g' deployment/k8s/staging/*.yaml
+          sed -i 's|IMAGE_TAG_FRONTEND|${{ needs.build-images.outputs.frontend-image }}|g' deployment/k8s/staging/*.yaml
+
+      - name: Deploy to staging
+        run: |
+          kubectl apply -f deployment/k8s/staging/
+          kubectl rollout status deployment/emr-backend-staging -n emr-staging --timeout=600s
+          kubectl rollout status deployment/emr-frontend-staging -n emr-staging --timeout=600s
+
+      - name: Run smoke tests
+        run: |
+          kubectl wait --for=condition=ready pod -l app=emr-backend-staging -n emr-staging --timeout=300s
+          curl -f https://staging-api.emr-blockchain.com/api/health || exit 1
+
+      - name: Notify deployment success
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          text: "🚀 Staging deployment successful! Backend: ${{ needs.build-images.outputs.backend-digest }} Frontend: ${{ needs.build-images.outputs.frontend-digest }}"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # ===== Production部署 =====
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, build-images]
+    if: |
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment:
+      name: production
+      url: https://emr-blockchain.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
+
+      - name: Replace image tags in k8s manifests
+        run: |
+          sed -i 's|IMAGE_TAG_BACKEND|${{ needs.build-images.outputs.backend-image }}|g' deployment/k8s/production/*.yaml
+          sed -i 's|IMAGE_TAG_FRONTEND|${{ needs.build-images.outputs.frontend-image }}|g' deployment/k8s/production/*.yaml
+
+      - name: Create database backup
+        run: |
+          kubectl create job --from=cronjob/mysql-backup backup-$(date +%Y%m%d-%H%M%S) -n emr-production
+
+      - name: Deploy to production with rolling update
+        run: |
+          kubectl apply -f deployment/k8s/production/
+          kubectl rollout status deployment/emr-backend-production -n emr-production --timeout=900s
+          kubectl rollout status deployment/emr-frontend-production -n emr-production --timeout=900s
+
+      - name: Run production health checks
+        run: |
+          kubectl wait --for=condition=ready pod -l app=emr-backend-production -n emr-production --timeout=300s
+
+          # 健康检查
+          curl -f https://api.emr-blockchain.com/api/health || exit 1
+
+          # 功能测试
+          curl -f https://api.emr-blockchain.com/api/auth/verify || exit 1
+
+      - name: Notify deployment success
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          text: "🎉 Production deployment successful! System is live at https://emr-blockchain.com"
+        env: SLACK_WEBHOOK_URL:-blockchain.com ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # ===== 部署失败回滚 =====
+  rollback-on-failure:
+    name: Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: failure()
+
+    steps:
+      - name: Rollback staging deployment
+        if: needs.deploy-staging.result == 'failure'
+        run: |
+          kubectl rollout undo deployment/emr-backend-staging -n emr-staging
+          kubectl rollout undo deployment/emr-frontend-staging -n emr-staging
+
+      - name: Rollback production deployment
+        if: needs.deploy-production.result == 'failure'
+        run: |
+          kubectl rollout undo deployment/emr-backend-production -n emr-production
+          kubectl rollout undo deployment/emr-frontend-production -n emr-production
+
+      - name: Notify rollback
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          text: "⚠️ Deployment failed and rollback initiated. Please check the logs."
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # ===== 性能测试 =====
+  performance-tests:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: needs.deploy-staging.result == 'success'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Artillery
+        run: npm install -g artillery@latest
+
+      - name: Run performance tests
+        working-directory: ./backend-app
+        run: |
+          artillery run test/performance/load-test.yml --target https://staging-api.emr-blockchain.com
+        continue-on-error: true
+
+      - name: Upload performance results
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-test-results
+          path: backend-app/test/performance/results/
+          retention-days: 30

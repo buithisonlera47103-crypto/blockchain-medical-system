@@ -1,0 +1,309 @@
+# IPFS服务部署配置
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ipfs-deployment
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: ipfs
+    version: "latest"
+spec:
+  replicas: 3  # 3副本实现高可用
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: blockchain-emr
+      component: ipfs
+  template:
+    metadata:
+      labels:
+        app: blockchain-emr
+        component: ipfs
+        version: "latest"
+    spec:
+      initContainers:
+      - name: ipfs-init
+        image: ipfs/kubo:latest
+        command: ["sh", "-c"]
+        args:
+        - |
+          if [ ! -f /data/ipfs/config ]; then
+            ipfs init --profile server
+            ipfs config Addresses.API /ip4/0.0.0.0/tcp/5001
+            ipfs config Addresses.Gateway /ip4/0.0.0.0/tcp/8080
+            ipfs config --json API.HTTPHeaders.Access-Control-Allow-Origin '["*"]'
+            ipfs config --json API.HTTPHeaders.Access-Control-Allow-Methods '["PUT", "POST", "GET"]'
+            ipfs config --json Swarm.ConnMgr.HighWater 2000
+            ipfs config --json Swarm.ConnMgr.LowWater 500
+            ipfs config --json Datastore.StorageMax '"10GB"'
+            ipfs config --json Reprovider.Interval '"12h"'
+          fi
+        volumeMounts:
+        - name: ipfs-storage
+          mountPath: /data/ipfs
+        env:
+        - name: IPFS_PROFILE
+          value: "server"
+      containers:
+      - name: ipfs
+        image: ipfs/kubo:latest
+        ports:
+        - containerPort: 4001
+          name: swarm
+          protocol: TCP
+        - containerPort: 5001
+          name: api
+          protocol: TCP
+        - containerPort: 8080
+          name: gateway
+          protocol: TCP
+        env:
+        - name: IPFS_PROFILE
+          value: "server"
+        - name: IPFS_PATH
+          value: "/data/ipfs"
+        volumeMounts:
+        - name: ipfs-storage
+          mountPath: /data/ipfs
+        - name: ipfs-config
+          mountPath: /container-init.d
+          readOnly: true
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/v0/version
+            port: 5001
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/v0/version
+            port: 5001
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+      volumes:
+      - name: ipfs-storage
+        persistentVolumeClaim:
+          claimName: ipfs-pvc
+      - name: ipfs-config
+        configMap:
+          name: ipfs-config
+      securityContext:
+        fsGroup: 1000
+      restartPolicy: Always
+---
+# IPFS服务
+apiVersion: v1
+kind: Service
+metadata:
+  name: ipfs-service
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: ipfs
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5001
+    targetPort: 5001
+    protocol: TCP
+    name: api
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: gateway
+  - port: 4001
+    targetPort: 4001
+    protocol: TCP
+    name: swarm
+  selector:
+    app: blockchain-emr
+    component: ipfs
+---
+# IPFS对等发现服务（用于集群内节点发现）
+apiVersion: v1
+kind: Service
+metadata:
+  name: ipfs-cluster-service
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: ipfs
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless service
+  ports:
+  - port: 4001
+    targetPort: 4001
+    protocol: TCP
+    name: swarm
+  selector:
+    app: blockchain-emr
+    component: ipfs
+---
+# IPFS持久化存储
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ipfs-pvc
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: ipfs
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: standard
+---
+# IPFS配置
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ipfs-config
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: ipfs
+data:
+  configure.sh: |
+    #!/bin/sh
+    set -e
+    
+    # 配置IPFS节点
+    echo "Configuring IPFS node..."
+    
+    # 设置API和Gateway地址
+    ipfs config Addresses.API /ip4/0.0.0.0/tcp/5001
+    ipfs config Addresses.Gateway /ip4/0.0.0.0/tcp/8080
+    
+    # 配置CORS
+    ipfs config --json API.HTTPHeaders.Access-Control-Allow-Origin '["*"]'
+    ipfs config --json API.HTTPHeaders.Access-Control-Allow-Methods '["PUT", "POST", "GET"]'
+    ipfs config --json API.HTTPHeaders.Access-Control-Allow-Headers '["Authorization"]'
+    
+    # 配置连接管理
+    ipfs config --json Swarm.ConnMgr.HighWater 2000
+    ipfs config --json Swarm.ConnMgr.LowWater 500
+    ipfs config --json Swarm.ConnMgr.GracePeriod '"20s"'
+    
+    # 配置存储限制
+    ipfs config --json Datastore.StorageMax '"10GB"'
+    ipfs config --json Datastore.StorageGCWatermark 90
+    
+    # 配置内容提供
+    ipfs config --json Reprovider.Interval '"12h"'
+    ipfs config --json Reprovider.Strategy '"all"'
+    
+    # 配置发现
+    ipfs config --json Discovery.MDNS.Enabled true
+    ipfs config --json Discovery.MDNS.Interval 10
+    
+    # 配置路由
+    ipfs config --json Routing.Type '"dhtclient"'
+    
+    # 性能优化
+    ipfs config --json Experimental.FilestoreEnabled true
+    ipfs config --json Experimental.UrlstoreEnabled true
+    ipfs config --json Experimental.ShardingEnabled true
+    
+    echo "IPFS configuration completed"
+---
+# IPFS集群StatefulSet（可选，用于更好的集群管理）
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ipfs-cluster
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: ipfs-cluster
+spec:
+  serviceName: ipfs-cluster-service
+  replicas: 3
+  selector:
+    matchLabels:
+      app: blockchain-emr
+      component: ipfs-cluster
+  template:
+    metadata:
+      labels:
+        app: blockchain-emr
+        component: ipfs-cluster
+    spec:
+      containers:
+      - name: ipfs
+        image: ipfs/kubo:latest
+        ports:
+        - containerPort: 4001
+          name: swarm
+        - containerPort: 5001
+          name: api
+        - containerPort: 8080
+          name: gateway
+        env:
+        - name: IPFS_PROFILE
+          value: "server"
+        - name: IPFS_PATH
+          value: "/data/ipfs"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        volumeMounts:
+        - name: ipfs-storage
+          mountPath: /data/ipfs
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/v0/version
+            port: 5001
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/v0/version
+            port: 5001
+          initialDelaySeconds: 10
+          periodSeconds: 10
+  volumeClaimTemplates:
+  - metadata:
+      name: ipfs-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 20Gi
+      storageClassName: standard

@@ -1,0 +1,83 @@
+# Kubernetes Namespace for EMR Fabric Network
+# Production deployment namespace with resource quotas and security policies
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: emr-fabric-network
+  labels:
+    name: emr-fabric-network
+    environment: production
+    app: emr-blockchain
+    compliance: hipaa
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: emr-fabric-quota
+  namespace: emr-fabric-network
+spec:
+  hard:
+    requests.cpu: "16"
+    requests.memory: 32Gi
+    limits.cpu: "32"
+    limits.memory: 64Gi
+    persistentvolumeclaims: "20"
+    services: "20"
+    secrets: "50"
+    configmaps: "50"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: emr-fabric-limits
+  namespace: emr-fabric-network
+spec:
+  limits:
+  - default:
+      cpu: "2"
+      memory: "4Gi"
+    defaultRequest:
+      cpu: "500m"
+      memory: "1Gi"
+    type: Container
+  - default:
+      storage: "10Gi"
+    type: PersistentVolumeClaim
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: emr-fabric-network-policy
+  namespace: emr-fabric-network
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: emr-fabric-network
+    - namespaceSelector:
+        matchLabels:
+          name: emr-monitoring
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: emr-fabric-network
+    - namespaceSelector:
+        matchLabels:
+          name: emr-monitoring
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80

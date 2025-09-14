@@ -1,0 +1,220 @@
+# Gitleaks Configuration for Blockchain EMR System
+# Detects secrets, API keys, and sensitive information in code
+
+title = "Blockchain EMR Gitleaks Configuration"
+
+# Global settings
+[extend]
+# Use default gitleaks rules as base
+useDefault = true
+
+# Additional custom rules for healthcare/blockchain context
+[[rules]]
+id = "blockchain-private-key"
+description = "Blockchain private key detected"
+regex = '''-----BEGIN (EC|RSA|DSA|OPENSSH|PGP) PRIVATE KEY-----'''
+tags = ["key", "blockchain", "private"]
+
+[[rules]]
+id = "ethereum-private-key"
+description = "Ethereum private key detected"
+regex = '''[0-9a-fA-F]{64}'''
+tags = ["ethereum", "private-key", "blockchain"]
+
+[[rules]]
+id = "fabric-ca-key"
+description = "Hyperledger Fabric CA private key"
+regex = '''-----BEGIN PRIVATE KEY-----[\s\S]*-----END PRIVATE KEY-----'''
+tags = ["fabric", "ca", "private-key"]
+
+[[rules]]
+id = "jwt-secret"
+description = "JWT secret key detected"
+regex = '''jwt[_-]?secret[_-]?key?\s*[:=]\s*["\']?[a-zA-Z0-9+/=]{32,}["\']?'''
+tags = ["jwt", "secret", "authentication"]
+
+[[rules]]
+id = "database-connection-string"
+description = "Database connection string with credentials"
+regex = '''(mysql|postgresql|mongodb)://[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+@[a-zA-Z0-9.-]+'''
+tags = ["database", "credentials", "connection-string"]
+
+[[rules]]
+id = "aws-access-key"
+description = "AWS Access Key ID"
+regex = '''AKIA[0-9A-Z]{16}'''
+tags = ["aws", "access-key", "cloud"]
+
+[[rules]]
+id = "aws-secret-key"
+description = "AWS Secret Access Key"
+regex = '''[0-9a-zA-Z/+]{40}'''
+tags = ["aws", "secret-key", "cloud"]
+
+[[rules]]
+id = "encryption-key"
+description = "Encryption key detected"
+regex = '''(encryption[_-]?key|master[_-]?key|secret[_-]?key)\s*[:=]\s*["\']?[a-zA-Z0-9+/=]{32,}["\']?'''
+tags = ["encryption", "key", "crypto"]
+
+[[rules]]
+id = "api-key-generic"
+description = "Generic API key pattern"
+regex = '''api[_-]?key\s*[:=]\s*["\']?[a-zA-Z0-9]{32,}["\']?'''
+tags = ["api", "key", "authentication"]
+
+[[rules]]
+id = "password-in-code"
+description = "Password in code"
+regex = '''password\s*[:=]\s*["\'][^"\']{8,}["\']'''
+tags = ["password", "credentials"]
+
+[[rules]]
+id = "ipfs-api-key"
+description = "IPFS API key or secret"
+regex = '''ipfs[_-]?(api[_-]?key|secret)\s*[:=]\s*["\']?[a-zA-Z0-9]{32,}["\']?'''
+tags = ["ipfs", "api-key", "storage"]
+
+# File and path configurations
+[allowlist]
+description = "Allowlist for known false positives"
+
+# Allow test files with dummy secrets
+paths = [
+    '''.*\.test\.(ts|js)$''',
+    '''.*\.spec\.(ts|js)$''',
+    '''tests/.*''',
+    '''test/.*''',
+    '''.*\.example\..*''',
+    '''.*\.template\..*''',
+    '''.*\.sample\..*''',
+    '''README\.md$''',
+    '''CONTRIBUTING\.md$''',
+    '''docs/.*''',
+    '''.github/.*''',
+    '''node_modules/.*''',
+    '''dist/.*''',
+    '''build/.*''',
+    '''coverage/.*''',
+]
+
+# Allow specific test secrets and dummy values
+regexes = [
+    # Test JWT secrets
+    '''jwt[_-]?secret[_-]?key?\s*[:=]\s*["\']?(test|dummy|example|sample)[a-zA-Z0-9]*["\']?''',
+    
+    # Test database URLs
+    '''(mysql|postgresql)://test:test@localhost''',
+    
+    # Example/template values
+    '''(your|example|sample|dummy|test)[_-]?(api[_-]?key|secret|password)''',
+    
+    # Common test patterns
+    '''(test|dummy|example|sample|placeholder)[a-zA-Z0-9]*''',
+    
+    # Base64 encoded test strings
+    '''dGVzdA==''', # "test" in base64
+    '''ZXhhbXBsZQ==''', # "example" in base64
+    
+    # Common placeholder values
+    '''(xxx|yyy|zzz|abc|123){3,}''',
+    
+    # Environment variable references (not actual secrets)
+    '''\$\{?[A-Z_]+\}?''',
+    '''process\.env\.[A-Z_]+''',
+]
+
+# Commits to ignore (if any)
+commits = []
+
+# Stop scanning at specific commit (if needed)
+# stopAt = "commit-hash"
+
+# File extensions to scan
+[allowlist.files]
+# Only scan relevant file types
+extensions = [
+    "ts", "js", "tsx", "jsx", "json", "yml", "yaml", 
+    "env", "conf", "config", "properties", "toml",
+    "sh", "bash", "py", "go", "rs", "java", "cs",
+    "sql", "md", "txt", "dockerfile", "docker-compose"
+]
+
+# Global file patterns to ignore
+[allowlist.paths]
+patterns = [
+    # Dependencies and build artifacts
+    '''node_modules/.*''',
+    '''dist/.*''',
+    '''build/.*''',
+    '''coverage/.*''',
+    '''\.next/.*''',
+    '''\.nuxt/.*''',
+    
+    # Version control and IDE
+    '''\.git/.*''',
+    '''\.svn/.*''',
+    '''\.hg/.*''',
+    '''\.vscode/.*''',
+    '''\.idea/.*''',
+    
+    # Logs and temporary files
+    '''logs?/.*''',
+    '''tmp/.*''',
+    '''temp/.*''',
+    '''\.tmp/.*''',
+    '''\.temp/.*''',
+    
+    # Package manager files
+    '''package-lock\.json$''',
+    '''yarn\.lock$''',
+    '''pnpm-lock\.yaml$''',
+    
+    # Generated files
+    '''.*\.generated\..*''',
+    '''.*\.min\.(js|css)$''',
+    '''.*\.bundle\.(js|css)$''',
+    
+    # Documentation
+    '''docs/.*\.md$''',
+    '''README.*\.md$''',
+    '''CHANGELOG.*\.md$''',
+    '''LICENSE.*''',
+    
+    # Test fixtures and mock data
+    '''fixtures/.*''',
+    '''mocks?/.*''',
+    '''__mocks__/.*''',
+    '''test-data/.*''',
+]
+
+# Entropy settings for detecting high-entropy strings
+[allowlist.regexTarget]
+# Target specific parts of files
+target = "match"
+
+# Custom entropy thresholds
+[[rules]]
+id = "high-entropy-string"
+description = "High entropy string (potential secret)"
+entropy = 4.5
+entropyGroup = 1
+regex = '''[a-zA-Z0-9+/=]{32,}'''
+tags = ["entropy", "secret"]
+
+# Exclude common high-entropy but non-secret patterns
+[allowlist.regexes]
+patterns = [
+    # Base64 encoded images
+    '''data:image/[a-zA-Z]+;base64,''',
+    
+    # Hash values in comments or documentation
+    '''#\s*[a-fA-F0-9]{32,}''',
+    '''/\*\s*[a-fA-F0-9]{32,}''',
+    
+    # UUIDs
+    '''[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}''',
+    
+    # Common test hashes
+    '''(sha256|md5|sha1):\s*[a-fA-F0-9]{32,}''',
+]

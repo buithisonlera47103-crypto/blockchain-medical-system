@@ -1,0 +1,412 @@
+/* 验证输入框样式 */
+.validated-input-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: auto;
+  position: relative;
+}
+
+.validated-input-container.full-width {
+  width: 100%;
+}
+
+/* 标签样式 */
+.input-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.required-indicator {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+/* 输入框包装器 */
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: white;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+/* 不同变体样式 */
+.variant-outlined .input-wrapper {
+  border: 1px solid #d1d5db;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.variant-filled .input-wrapper {
+  background: #f9fafb;
+  border: 1px solid transparent;
+  border-bottom: 2px solid #d1d5db;
+  border-radius: 4px 4px 0 0;
+}
+
+.variant-standard .input-wrapper {
+  border: none;
+  border-bottom: 1px solid #d1d5db;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* 输入框基础样式 */
+.validated-input {
+  flex: 1;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #111827;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.validated-input::placeholder {
+  color: #9ca3af;
+  opacity: 1;
+}
+
+.validated-input:disabled {
+  color: #9ca3af;
+  cursor: not-allowed;
+  background: #f9fafb;
+}
+
+/* 文本域特殊样式 */
+.validated-input[type="textarea"] {
+  resize: vertical;
+  min-height: 80px;
+  font-family: inherit;
+}
+
+/* 带装饰的输入框 */
+.validated-input.with-start-adornment {
+  padding-left: 0;
+}
+
+.validated-input.with-end-adornment {
+  padding-right: 0;
+}
+
+/* 装饰元素样式 */
+.input-adornment {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.start-adornment {
+  border-right: 1px solid #e5e7eb;
+}
+
+.end-adornment {
+  border-left: 1px solid #e5e7eb;
+}
+
+/* 密码切换按钮 */
+.password-toggle {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: #6b7280;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.password-toggle:hover:not(:disabled) {
+  color: #374151;
+  background: #f3f4f6;
+}
+
+.password-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* 状态指示器 */
+.loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #e5e7eb;
+  border-top: 2px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.success-icon {
+  color: #10b981;
+}
+
+.error-icon {
+  color: #ef4444;
+}
+
+/* 焦点状态 */
+.validated-input-container.focused .input-wrapper {
+  outline: 2px solid #3b82f6;
+  outline-offset: -1px;
+}
+
+.variant-outlined.focused .input-wrapper {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px #3b82f6;
+}
+
+.variant-filled.focused .input-wrapper {
+  border-bottom-color: #3b82f6;
+  background: white;
+}
+
+.variant-standard.focused .input-wrapper {
+  border-bottom-color: #3b82f6;
+  border-bottom-width: 2px;
+}
+
+/* 成功状态 */
+.validated-input-container.success .input-wrapper {
+  border-color: #10b981;
+}
+
+.variant-outlined.success .input-wrapper {
+  box-shadow: 0 0 0 1px #10b981;
+}
+
+.variant-filled.success .input-wrapper {
+  border-bottom-color: #10b981;
+}
+
+.variant-standard.success .input-wrapper {
+  border-bottom-color: #10b981;
+}
+
+/* 错误状态 */
+.validated-input-container.error .input-wrapper {
+  border-color: #ef4444;
+}
+
+.variant-outlined.error .input-wrapper {
+  box-shadow: 0 0 0 1px #ef4444;
+}
+
+.variant-filled.error .input-wrapper {
+  border-bottom-color: #ef4444;
+}
+
+.variant-standard.error .input-wrapper {
+  border-bottom-color: #ef4444;
+}
+
+.validated-input-container.error .input-label {
+  color: #ef4444;
+}
+
+/* 禁用状态 */
+.validated-input-container.disabled .input-wrapper {
+  background: #f9fafb;
+  border-color: #e5e7eb;
+  cursor: not-allowed;
+}
+
+.validated-input-container.disabled .input-label {
+  color: #9ca3af;
+}
+
+/* 加载状态 */
+.validated-input-container.loading .input-wrapper {
+  background: #f9fafb;
+  cursor: wait;
+}
+
+/* 辅助文本 */
+.helper-text {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #6b7280;
+  margin-top: 4px;
+  min-height: 16px;
+}
+
+.helper-text.error {
+  color: #ef4444;
+}
+
+.helper-text.success {
+  color: #10b981;
+}
+
+/* 字符计数 */
+.character-count {
+  font-size: 12px;
+  color: #9ca3af;
+  text-align: right;
+  margin-top: 4px;
+}
+
+/* 响应式设计 */
+@media (max-width: 640px) {
+  .validated-input {
+    font-size: 16px; /* 防止iOS缩放 */
+  }
+  
+  .input-label {
+    font-size: 13px;
+  }
+  
+  .helper-text {
+    font-size: 11px;
+  }
+}
+
+/* 高对比度模式支持 */
+@media (prefers-contrast: high) {
+  .validated-input-container .input-wrapper {
+    border-width: 2px;
+  }
+  
+  .validated-input {
+    font-weight: 500;
+  }
+  
+  .input-label {
+    font-weight: 600;
+  }
+}
+
+/* 深色模式支持 */
+@media (prefers-color-scheme: dark) {
+  .validated-input-container {
+    color-scheme: dark;
+  }
+  
+  .input-label {
+    color: #f3f4f6;
+  }
+  
+  .input-wrapper {
+    background: #1f2937;
+    border-color: #4b5563;
+  }
+  
+  .validated-input {
+    color: #f3f4f6;
+    background: transparent;
+  }
+  
+  .validated-input::placeholder {
+    color: #9ca3af;
+  }
+  
+  .validated-input:disabled {
+    color: #6b7280;
+    background: #374151;
+  }
+  
+  .variant-filled .input-wrapper {
+    background: #374151;
+  }
+  
+  .input-adornment {
+    color: #9ca3af;
+    border-color: #4b5563;
+  }
+  
+  .helper-text {
+    color: #d1d5db;
+  }
+  
+  .character-count {
+    color: #9ca3af;
+  }
+  
+  /* 深色模式下的焦点状态 */
+  .validated-input-container.focused .input-wrapper {
+    outline-color: #60a5fa;
+  }
+  
+  .variant-outlined.focused .input-wrapper {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 1px #60a5fa;
+  }
+}
+
+/* 动画效果 */
+.validated-input-container {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 错误震动动画 */
+.validated-input-container.error .input-wrapper {
+  animation: shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+/* 成功闪烁动画 */
+.validated-input-container.success .input-wrapper {
+  animation: successPulse 0.6s ease-out;
+}
+
+@keyframes successPulse {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { box-shadow: 0 0 0 4px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+/* 打印样式 */
+@media print {
+  .validated-input-container {
+    break-inside: avoid;
+  }
+  
+  .input-wrapper {
+    border: 1px solid #000 !important;
+    background: white !important;
+  }
+  
+  .validated-input {
+    color: #000 !important;
+    background: white !important;
+  }
+  
+  .password-toggle,
+  .loading-spinner,
+  .success-icon,
+  .error-icon {
+    display: none;
+  }
+}

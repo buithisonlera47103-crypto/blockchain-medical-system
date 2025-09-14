@@ -1,0 +1,13 @@
+{
+  "timestamp": "2025-09-13T09:42:21.177Z",
+  "docker": true,
+  "fabricTools": false,
+  "network": true,
+  "chaincode": false,
+  "containers": [
+    "ca.org1.example.com"
+  ],
+  "recommendations": [
+    "部署智能合约: cd fabric && ./network.sh chaincode"
+  ]
+}

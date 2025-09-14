@@ -1,0 +1,16 @@
+{
+  "timestamp": "2025-08-06T15:47:44.877Z",
+  "frontend": {
+    "compiled": false,
+    "fixedFiles": 1
+  },
+  "backend": {
+    "compiled": true,
+    "fixedFiles": 0
+  },
+  "summary": {
+    "totalProjects": 2,
+    "successfulCompilations": 1,
+    "autoFixesApplied": 1
+  }
+}

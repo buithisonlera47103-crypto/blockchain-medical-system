@@ -1,0 +1,54 @@
+# 前端服务Dockerfile
+# 多阶段构建：构建阶段
+FROM node:20-alpine AS builder
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制package文件
+COPY react-app/package*.json ./
+
+# 安装依赖
+RUN npm ci && npm cache clean --force
+
+# 复制源代码
+COPY react-app/ .
+
+# 设置生产环境变量
+ENV NODE_ENV=production
+ENV REACT_APP_API_URL=https://emr.example.com/api/v1
+ENV REACT_APP_WS_URL=wss://emr.example.com
+
+# 构建React应用
+RUN npm run build
+
+# 生产环境镜像：nginx
+FROM nginx:1.25-alpine AS production
+
+# 安装必要的工具
+RUN apk add --no-cache curl
+
+# 复制自定义nginx配置
+COPY deployment/nginx/frontend.conf /etc/nginx/conf.d/default.conf
+
+# 从builder阶段复制构建产物
+COPY --from=builder /app/build /usr/share/nginx/html
+
+# 创建nginx用户和必要目录
+RUN chown -R nginx:nginx /usr/share/nginx/html && \
+    chown -R nginx:nginx /var/cache/nginx && \
+    chown -R nginx:nginx /var/log/nginx && \
+    chown -R nginx:nginx /etc/nginx/conf.d
+
+# 切换到nginx用户
+USER nginx
+
+# 暴露端口
+EXPOSE 3004
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3004/ || exit 1
+
+# 启动nginx
+CMD ["nginx", "-g", "daemon off;"]

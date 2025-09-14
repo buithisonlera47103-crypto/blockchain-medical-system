@@ -1,0 +1,273 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Renovate configuration for Blockchain EMR System",
+  "extends": [
+    "config:base",
+    "security:openssf-scorecard",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":separatePatchReleases"
+  ],
+  "timezone": "UTC",
+  "schedule": ["before 6am on monday"],
+  "labels": ["dependencies", "automated"],
+  "assignees": ["@blockchain-emr/maintainers"],
+  "reviewers": ["@blockchain-emr/security-team"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "branchConcurrentLimit": 10,
+  "platformAutomerge": false,
+  "requiredStatusChecks": [
+    "Code Quality & Linting",
+    "Unit & Integration Tests",
+    "Security Scanning",
+    "Build & Container Scan"
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "schedule": ["at any time"],
+    "labels": ["security", "vulnerability", "high-priority"],
+    "assignees": ["@blockchain-emr/security-team"],
+    "prPriority": 10
+  },
+  "osvVulnerabilityAlerts": true,
+  "packageRules": [
+    {
+      "description": "Security updates - immediate attention",
+      "matchPackagePatterns": ["*"],
+      "matchUpdateTypes": ["patch"],
+      "matchCurrentVersion": "!/^0/",
+      "vulnerabilityAlerts": true,
+      "labels": ["security", "patch", "auto-merge-candidate"],
+      "prPriority": 10,
+      "schedule": ["at any time"],
+      "automerge": false,
+      "platformAutomerge": false
+    },
+    {
+      "description": "Critical security vulnerabilities - auto-merge patches",
+      "matchPackagePatterns": ["*"],
+      "matchUpdateTypes": ["patch"],
+      "matchCurrentVersion": "!/^0/",
+      "vulnerabilityAlerts": true,
+      "matchSeverity": ["critical", "high"],
+      "labels": ["security", "critical", "auto-merge"],
+      "prPriority": 15,
+      "schedule": ["at any time"],
+      "automerge": true,
+      "platformAutomerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash"
+    },
+    {
+      "description": "TypeScript and Node.js - weekly updates",
+      "matchPackageNames": [
+        "typescript",
+        "@types/node",
+        "node",
+        "@typescript-eslint/parser",
+        "@typescript-eslint/eslint-plugin"
+      ],
+      "schedule": ["before 6am on monday"],
+      "labels": ["typescript", "tooling"],
+      "prPriority": 5
+    },
+    {
+      "description": "React and related packages - grouped updates",
+      "matchPackageNames": [
+        "react",
+        "react-dom",
+        "@types/react",
+        "@types/react-dom",
+        "react-router-dom",
+        "react-scripts"
+      ],
+      "groupName": "React ecosystem",
+      "schedule": ["before 6am on monday"],
+      "labels": ["react", "frontend"],
+      "prPriority": 4
+    },
+    {
+      "description": "Testing frameworks - grouped updates",
+      "matchPackageNames": [
+        "jest",
+        "@types/jest",
+        "playwright",
+        "@playwright/test",
+        "supertest",
+        "@types/supertest"
+      ],
+      "groupName": "Testing frameworks",
+      "schedule": ["before 6am on monday"],
+      "labels": ["testing", "tooling"],
+      "prPriority": 3
+    },
+    {
+      "description": "ESLint and Prettier - grouped updates",
+      "matchPackageNames": [
+        "eslint",
+        "prettier",
+        "eslint-config-prettier",
+        "eslint-plugin-prettier",
+        "eslint-plugin-import",
+        "eslint-plugin-jest",
+        "eslint-plugin-security",
+        "eslint-plugin-sonarjs"
+      ],
+      "groupName": "Code quality tools",
+      "schedule": ["before 6am on monday"],
+      "labels": ["code-quality", "tooling"],
+      "prPriority": 2
+    },
+    {
+      "description": "Database and ORM packages",
+      "matchPackageNames": ["mysql2", "typeorm", "redis", "ioredis"],
+      "labels": ["database", "backend"],
+      "prPriority": 6,
+      "schedule": ["before 6am on monday"]
+    },
+    {
+      "description": "Blockchain and crypto packages",
+      "matchPackageNames": [
+        "fabric-network",
+        "fabric-ca-client",
+        "crypto-js",
+        "bcrypt",
+        "@types/bcrypt"
+      ],
+      "labels": ["blockchain", "crypto", "security"],
+      "prPriority": 7,
+      "schedule": ["before 6am on monday"],
+      "reviewers": [
+        "@blockchain-emr/security-team",
+        "@blockchain-emr/blockchain-team"
+      ]
+    },
+    {
+      "description": "Express and middleware packages",
+      "matchPackageNames": [
+        "express",
+        "@types/express",
+        "helmet",
+        "cors",
+        "compression",
+        "express-rate-limit"
+      ],
+      "groupName": "Express ecosystem",
+      "labels": ["express", "backend", "middleware"],
+      "prPriority": 5,
+      "schedule": ["before 6am on monday"]
+    },
+    {
+      "description": "Development dependencies - lower priority",
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "labels": ["dev-dependencies"],
+      "prPriority": 1,
+      "schedule": ["before 6am on monday"]
+    },
+    {
+      "description": "Major version updates - manual review required",
+      "matchUpdateTypes": ["major"],
+      "labels": ["major-update", "breaking-change", "manual-review"],
+      "prPriority": 8,
+      "schedule": ["before 6am on first day of month"],
+      "assignees": [
+        "@blockchain-emr/maintainers",
+        "@blockchain-emr/architecture-team"
+      ],
+      "reviewers": ["@blockchain-emr/maintainers"]
+    },
+    {
+      "description": "Docker base images",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["node", "mysql", "redis", "nginx"],
+      "labels": ["docker", "infrastructure"],
+      "prPriority": 6,
+      "schedule": ["before 6am on monday"]
+    },
+    {
+      "description": "GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "labels": ["github-actions", "ci-cd"],
+      "prPriority": 3,
+      "schedule": ["before 6am on monday"]
+    },
+    {
+      "description": "Pin Docker digests for security",
+      "matchDatasources": ["docker"],
+      "pinDigests": true,
+      "labels": ["docker", "security", "pin-digest"]
+    },
+    {
+      "description": "Ignore pre-release versions",
+      "matchPackagePatterns": ["*"],
+      "ignoreUnstable": true
+    },
+    {
+      "description": "Ignore deprecated packages",
+      "matchPackageNames": ["request", "moment"],
+      "enabled": false
+    }
+  ],
+  "regexManagers": [
+    {
+      "description": "Update Node.js version in Dockerfiles",
+      "fileMatch": ["(^|/)Dockerfile$"],
+      "matchStrings": ["FROM node:(?<currentValue>.*?)\\s"],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "node"
+    },
+    {
+      "description": "Update versions in package.json engines",
+      "fileMatch": ["(^|/)package\\.json$"],
+      "matchStrings": ["\"node\":\\s*\"(?<currentValue>.*?)\""],
+      "datasourceTemplate": "node-version",
+      "depNameTemplate": "node"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update versions in GitHub Actions workflows",
+      "fileMatch": ["^\\.github/workflows/.*\\.ya?ml$"],
+      "matchStrings": ["NODE_VERSION:\\s*'(?<currentValue>.*?)'"],
+      "datasourceTemplate": "node-version",
+      "depNameTemplate": "node"
+    }
+  ],
+  "prBodyTemplate": "This PR updates {{{depName}}} from `{{{currentVersion}}}` to `{{{newVersion}}}`.\n\n{{{body}}}\n\n---\n\n### Checklist\n- [ ] Tests pass\n- [ ] Security scan passes\n- [ ] Performance impact assessed\n- [ ] Breaking changes documented\n- [ ] Changelog updated (if applicable)\n\n### Security\n{{{#if hasVulnerabilityAlerts}}}🚨 **This update addresses security vulnerabilities**{{{/if}}}\n\n### Release Notes\n{{{#if releases}}}\n{{{#each releases}}}\n#### {{{title}}}\n{{{#if body}}}{{{body}}}{{{/if}}}\n{{{/each}}}\n{{{/if}}}",
+  "prBodyColumns": ["Package", "Type", "Update", "Change"],
+  "prBodyNotes": [
+    "This PR was automatically created by Renovate Bot.",
+    "Please review the changes and ensure all tests pass before merging.",
+    "For security updates, prioritize review and merge as soon as possible."
+  ],
+  "commitMessageTopic": "{{depName}}",
+  "commitMessageAction": "update",
+  "commitMessageExtra": "to {{newVersion}}",
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on first day of month"],
+    "commitMessageAction": "update lockfile",
+    "prTitle": "chore(deps): update lockfile",
+    "labels": ["lockfile-maintenance"]
+  },
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "📦 Dependency Dashboard",
+  "dependencyDashboardHeader": "This dashboard provides an overview of all dependency updates for the Blockchain EMR system. Security updates are prioritized and should be reviewed immediately.",
+  "dependencyDashboardLabels": ["dependencies", "dashboard"],
+  "configWarningReuseIssue": false,
+  "suppressNotifications": ["prIgnoreNotification"],
+  "rebaseWhen": "conflicted",
+  "stopUpdatingLabel": "renovate-stop",
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**"
+  ]
+}

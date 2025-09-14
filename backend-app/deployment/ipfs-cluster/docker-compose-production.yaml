@@ -1,0 +1,286 @@
+# Production IPFS Cluster Configuration
+# High-availability IPFS cluster for EMR blockchain system
+# Compliant with read111.md requirements for distributed storage
+
+version: '3.8'
+
+volumes:
+  ipfs0_data:
+  ipfs1_data:
+  ipfs2_data:
+  cluster0_data:
+  cluster1_data:
+  cluster2_data:
+
+networks:
+  ipfs-cluster-network:
+    name: ipfs-cluster-production
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+services:
+  # IPFS Node 0
+  ipfs0:
+    image: ipfs/kubo:v0.24.0
+    container_name: ipfs0
+    environment:
+      - IPFS_PROFILE=server
+      - IPFS_PATH=/data/ipfs
+    volumes:
+      - ipfs0_data:/data/ipfs
+      - ./config/ipfs0:/config
+    ports:
+      - "4001:4001"     # P2P
+      - "5001:5001"     # API
+      - "8080:8080"     # Gateway
+    networks:
+      ipfs-cluster-network:
+        ipv4_address: 172.20.0.10
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # IPFS Node 1
+  ipfs1:
+    image: ipfs/kubo:v0.24.0
+    container_name: ipfs1
+    environment:
+      - IPFS_PROFILE=server
+      - IPFS_PATH=/data/ipfs
+    volumes:
+      - ipfs1_data:/data/ipfs
+      - ./config/ipfs1:/config
+    ports:
+      - "4002:4001"     # P2P
+      - "5002:5001"     # API
+      - "8081:8080"     # Gateway
+    networks:
+      ipfs-cluster-network:
+        ipv4_address: 172.20.0.11
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # IPFS Node 2
+  ipfs2:
+    image: ipfs/kubo:v0.24.0
+    container_name: ipfs2
+    environment:
+      - IPFS_PROFILE=server
+      - IPFS_PATH=/data/ipfs
+    volumes:
+      - ipfs2_data:/data/ipfs
+      - ./config/ipfs2:/config
+    ports:
+      - "4003:4001"     # P2P
+      - "5003:5001"     # API
+      - "8082:8080"     # Gateway
+    networks:
+      ipfs-cluster-network:
+        ipv4_address: 172.20.0.12
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # IPFS Cluster Node 0 (Leader)
+  cluster0:
+    image: ipfs/ipfs-cluster:v1.0.8
+    container_name: cluster0
+    environment:
+      - CLUSTER_PEERNAME=cluster0
+      - CLUSTER_SECRET=${CLUSTER_SECRET}
+      - CLUSTER_IPFSHTTP_NODEMULTIADDRESS=/dns4/ipfs0/tcp/5001
+      - CLUSTER_CRDT_TRUSTEDPEERS=*
+      - CLUSTER_RESTAPI_HTTPLISTENMULTIADDRESS=/ip4/0.0.0.0/tcp/9094
+      - CLUSTER_MONITORPINGINTERVAL=2s
+      - CLUSTER_REPLICATIONFACTORMIN=2
+      - CLUSTER_REPLICATIONFACTORMAX=3
+    volumes:
+      - cluster0_data:/data/ipfs-cluster
+      - ./config/cluster0:/config
+    ports:
+      - "9094:9094"     # REST API
+      - "9095:9095"     # Cluster P2P
+    networks:
+      ipfs-cluster-network:
+        ipv4_address: 172.20.0.20
+    depends_on:
+      - ipfs0
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "ipfs-cluster-ctl", "id"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # IPFS Cluster Node 1
+  cluster1:
+    image: ipfs/ipfs-cluster:v1.0.8
+    container_name: cluster1
+    environment:
+      - CLUSTER_PEERNAME=cluster1
+      - CLUSTER_SECRET=${CLUSTER_SECRET}
+      - CLUSTER_IPFSHTTP_NODEMULTIADDRESS=/dns4/ipfs1/tcp/5001
+      - CLUSTER_CRDT_TRUSTEDPEERS=*
+      - CLUSTER_RESTAPI_HTTPLISTENMULTIADDRESS=/ip4/0.0.0.0/tcp/9094
+      - CLUSTER_MONITORPINGINTERVAL=2s
+      - CLUSTER_REPLICATIONFACTORMIN=2
+      - CLUSTER_REPLICATIONFACTORMAX=3
+    volumes:
+      - cluster1_data:/data/ipfs-cluster
+      - ./config/cluster1:/config
+    ports:
+      - "9096:9094"     # REST API
+      - "9097:9095"     # Cluster P2P
+    networks:
+      ipfs-cluster-network:
+        ipv4_address: 172.20.0.21
+    depends_on:
+      - ipfs1
+      - cluster0
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "ipfs-cluster-ctl", "id"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # IPFS Cluster Node 2
+  cluster2:
+    image: ipfs/ipfs-cluster:v1.0.8
+    container_name: cluster2
+    environment:
+      - CLUSTER_PEERNAME=cluster2
+      - CLUSTER_SECRET=${CLUSTER_SECRET}
+      - CLUSTER_IPFSHTTP_NODEMULTIADDRESS=/dns4/ipfs2/tcp/5001
+      - CLUSTER_CRDT_TRUSTEDPEERS=*
+      - CLUSTER_RESTAPI_HTTPLISTENMULTIADDRESS=/ip4/0.0.0.0/tcp/9094
+      - CLUSTER_MONITORPINGINTERVAL=2s
+      - CLUSTER_REPLICATIONFACTORMIN=2
+      - CLUSTER_REPLICATIONFACTORMAX=3
+    volumes:
+      - cluster2_data:/data/ipfs-cluster
+      - ./config/cluster2:/config
+    ports:
+      - "9098:9094"     # REST API
+      - "9099:9095"     # Cluster P2P
+    networks:
+      ipfs-cluster-network:
+        ipv4_address: 172.20.0.22
+    depends_on:
+      - ipfs2
+      - cluster0
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "ipfs-cluster-ctl", "id"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # IPFS Cluster Monitoring
+  cluster-monitor:
+    image: ipfs/ipfs-cluster:v1.0.8
+    container_name: cluster-monitor
+    command: ["ipfs-cluster-ctl", "monitor", "--interval", "10s"]
+    environment:
+      - CLUSTER_RESTAPI_HTTPLISTENMULTIADDRESS=/dns4/cluster0/tcp/9094
+    networks:
+      - ipfs-cluster-network
+    depends_on:
+      - cluster0
+      - cluster1
+      - cluster2
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  # Load Balancer for IPFS Gateways
+  ipfs-gateway-lb:
+    image: nginx:alpine
+    container_name: ipfs-gateway-lb
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8090:80"       # Load balanced gateway
+    networks:
+      - ipfs-cluster-network
+    depends_on:
+      - ipfs0
+      - ipfs1
+      - ipfs2
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus Exporter for IPFS
+  ipfs-exporter:
+    image: prometheusio/ipfs-exporter:latest
+    container_name: ipfs-exporter
+    command:
+      - '--ipfs.api-url=http://ipfs0:5001'
+      - '--web.listen-address=:9401'
+    ports:
+      - "9401:9401"
+    networks:
+      - ipfs-cluster-network
+    depends_on:
+      - ipfs0
+    restart: unless-stopped

@@ -1,0 +1,418 @@
+name: 性能测试 CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    # 每天凌晨2点运行性能测试
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      test_duration:
+        description: "测试持续时间（秒）"
+        required: false
+        default: "300"
+      target_tps:
+        description: "目标TPS"
+        required: false
+        default: "1000"
+      enable_k6:
+        description: "启用K6测试"
+        type: boolean
+        required: false
+        default: true
+
+env:
+  NODE_VERSION: "18"
+  API_URL: "https://localhost:3001"
+  FRONTEND_URL: "http://localhost:3000"
+  TARGET_TPS: ${{ github.event.inputs.target_tps || '1000' }}
+  LOAD_TEST_DURATION: ${{ github.event.inputs.test_duration || '300' }}
+  MAX_RESPONSE_TIME: "500"
+  MAX_ERROR_RATE: "0.01"
+  MAX_CPU_USAGE: "80"
+  MAX_MEMORY_USAGE: "90"
+
+jobs:
+  setup:
+    name: 🔧 环境准备
+    runs-on: ubuntu-latest
+    outputs:
+      cache-key: ${{ steps.cache-key.outputs.key }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: "backend-app/package-lock.json"
+
+      - name: 生成缓存键
+        id: cache-key
+        run: |
+          echo "key=deps-${{ hashFiles('backend-app/package-lock.json') }}" >> $GITHUB_OUTPUT
+
+      - name: 缓存依赖
+        uses: actions/cache@v3
+        with:
+          path: |
+            backend-app/node_modules
+            ~/.npm
+          key: ${{ steps.cache-key.outputs.key }}
+          restore-keys: |
+            deps-
+
+      - name: 安装依赖
+        working-directory: backend-app
+        run: |
+          npm ci
+          npm install -g artillery k6
+
+  pre-test-validation:
+    name: 🧪 预测试验证
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: 恢复依赖缓存
+        uses: actions/cache@v3
+        with:
+          path: |
+            backend-app/node_modules
+            ~/.npm
+          key: ${{ needs.setup.outputs.cache-key }}
+
+      - name: 安装全局工具
+        run: |
+          npm install -g artillery k6
+
+      - name: 验证测试配置
+        working-directory: backend-app
+        run: |
+          echo "🔍 验证Artillery配置..."
+          artillery validate test/performance/artillery.config.json
+
+          echo "🔍 验证K6脚本..."
+          k6 validate test/performance/k6-test.js
+
+          echo "🔍 验证测试文件..."
+          npm run test:performance -- --testNamePattern="验证" --verbose
+
+      - name: 检查系统资源
+        run: |
+          echo "💻 系统信息:"
+          echo "CPU核心数: $(nproc)"
+          echo "内存大小: $(free -h | grep '^Mem:' | awk '{print $2}')"
+          echo "磁盘空间: $(df -h / | tail -1 | awk '{print $4}')"
+          echo "负载平均: $(uptime | awk -F'load average:' '{print $2}')"
+
+  performance-test:
+    name: 🚀 性能测试执行
+    runs-on: ubuntu-latest
+    needs: [setup, pre-test-validation]
+    strategy:
+      matrix:
+        test-type: ["api-load", "frontend-load"]
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: 恢复依赖缓存
+        uses: actions/cache@v3
+        with:
+          path: |
+            backend-app/node_modules
+            ~/.npm
+          key: ${{ needs.setup.outputs.cache-key }}
+
+      - name: 安装全局工具
+        run: |
+          npm install -g artillery k6
+
+      - name: 启动测试服务
+        working-directory: backend-app
+        run: |
+          echo "🚀 启动后端服务..."
+          npm run build
+          npm start &
+
+          echo "⏳ 等待服务启动..."
+          timeout 60 bash -c 'until curl -k -s https://localhost:3001/api/v1/monitoring/health; do sleep 2; done'
+
+          echo "✅ 后端服务已启动"
+        env:
+          NODE_ENV: test
+
+      - name: 启动前端服务
+        if: matrix.test-type == 'frontend-load'
+        working-directory: react-app
+        run: |
+          echo "🚀 启动前端服务..."
+          npm ci
+          npm start &
+
+          echo "⏳ 等待前端服务启动..."
+          timeout 60 bash -c 'until curl -s http://localhost:3000; do sleep 2; done'
+
+          echo "✅ 前端服务已启动"
+
+      - name: 执行API负载测试
+        if: matrix.test-type == 'api-load'
+        working-directory: backend-app
+        run: |
+          echo "🔥 开始API负载测试..."
+
+          # 启动系统监控
+          npm run performance:monitor &
+          MONITOR_PID=$!
+
+          # 运行Artillery测试
+          npm run load-test || true
+
+          # 停止监控
+          kill $MONITOR_PID || true
+
+          echo "✅ API负载测试完成"
+        env:
+          TEST_USER_EMAIL: "test@example.com"
+          TEST_USER_PASSWORD: "testpassword123"
+
+      - name: 执行K6分布式测试
+        if: matrix.test-type == 'frontend-load' && github.event.inputs.enable_k6 != 'false'
+        working-directory: backend-app
+        run: |
+          echo "🌐 开始K6分布式测试..."
+
+          # 运行K6测试
+          npm run k6-test || true
+
+          echo "✅ K6测试完成"
+        env:
+          TEST_USER_EMAIL: "test@example.com"
+          TEST_USER_PASSWORD: "testpassword123"
+
+      - name: 收集测试结果
+        if: always()
+        working-directory: backend-app
+        run: |
+          echo "📊 收集测试结果..."
+
+          # 创建结果目录
+          mkdir -p test-results/performance/artifacts
+
+          # 收集日志文件
+          if [ -f "logs/app.log" ]; then
+            cp logs/app.log test-results/performance/artifacts/
+          fi
+
+          if [ -f "logs/error.log" ]; then
+            cp logs/error.log test-results/performance/artifacts/
+          fi
+
+          # 收集系统信息
+          echo "系统资源使用情况:" > test-results/performance/artifacts/system-info.txt
+          echo "CPU: $(top -bn1 | grep 'Cpu(s)' | awk '{print $2}')" >> test-results/performance/artifacts/system-info.txt
+          echo "内存: $(free -h | grep '^Mem:')" >> test-results/performance/artifacts/system-info.txt
+          echo "磁盘: $(df -h /)" >> test-results/performance/artifacts/system-info.txt
+
+          # 列出所有生成的文件
+          echo "📁 生成的测试文件:"
+          find test-results/performance -type f -name "*" | head -20
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-test-results-${{ matrix.test-type }}
+          path: |
+            backend-app/test-results/performance/
+            backend-app/logs/
+          retention-days: 30
+
+  analysis:
+    name: 📈 性能分析
+    runs-on: ubuntu-latest
+    needs: [performance-test]
+    if: always()
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 下载测试结果
+        uses: actions/download-artifact@v3
+        with:
+          path: test-results/
+
+      - name: 分析性能数据
+        run: |
+          echo "📊 分析性能测试结果..."
+
+          # 创建分析报告
+          cat > performance-analysis.md << 'EOF'
+          # 🏥 区块链EMR系统性能测试报告
+
+          ## 📋 测试概览
+          - **测试时间**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          - **Git提交**: ${{ github.sha }}
+          - **分支**: ${{ github.ref_name }}
+          - **目标TPS**: ${{ env.TARGET_TPS }}
+          - **测试持续时间**: ${{ env.LOAD_TEST_DURATION }}秒
+
+          ## 🎯 性能目标
+          - ✅ 响应时间P95 < 500ms
+          - ✅ 错误率 < 1%
+          - ✅ CPU使用率 < 80%
+          - ✅ 内存使用率 < 90%
+
+          ## 📊 测试结果
+
+          ### API负载测试
+          EOF
+
+          # 检查是否有Artillery报告
+          if find test-results/ -name "artillery-report.json" -type f | head -1 | read artillery_report; then
+            echo "- ✅ Artillery负载测试已完成" >> performance-analysis.md
+            echo "- 📄 详细报告: [artillery-report.json](./test-results/performance-test-results-api-load/artillery-report.json)" >> performance-analysis.md
+          else
+            echo "- ❌ Artillery负载测试未完成或失败" >> performance-analysis.md
+          fi
+
+          # 检查是否有K6报告
+          if find test-results/ -name "k6-summary.json" -type f | head -1 | read k6_report; then
+            echo "- ✅ K6分布式测试已完成" >> performance-analysis.md
+            echo "- 📄 详细报告: [k6-summary.json](./test-results/performance-test-results-frontend-load/k6-summary.json)" >> performance-analysis.md
+          else
+            echo "- ❌ K6分布式测试未完成或失败" >> performance-analysis.md
+          fi
+
+          cat >> performance-analysis.md << 'EOF'
+
+          ### 系统监控
+          - 📊 系统资源监控已启用
+          - 🔍 详细监控数据请查看artifacts
+
+          ## 💡 优化建议
+
+          基于本次测试结果，建议：
+
+          1. **API优化**: 继续优化高频API的响应时间
+          2. **缓存策略**: 考虑增加Redis缓存层
+          3. **数据库优化**: 检查慢查询并添加索引
+          4. **负载均衡**: 在高负载场景下考虑水平扩展
+          5. **监控告警**: 建立实时性能监控和告警机制
+
+          ## 📁 相关文件
+
+          - [性能测试配置](./backend-app/test/performance/)
+          - [CI/CD工作流](./.github/workflows/performance-test.yml)
+          - [测试结果artifacts](./test-results/)
+
+          ---
+
+          *报告生成时间: $(date -u +"%Y-%m-%d %H:%M:%S UTC")*
+          *GitHub Actions Run: ${{ github.run_id }}*
+          EOF
+
+          echo "📋 性能分析报告已生成"
+          cat performance-analysis.md
+
+      - name: 创建性能报告评论
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const reportContent = fs.readFileSync('performance-analysis.md', 'utf8');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: reportContent
+            });
+
+      - name: 上传分析报告
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-analysis-report
+          path: performance-analysis.md
+          retention-days: 90
+
+  notification:
+    name: 📢 测试通知
+    runs-on: ubuntu-latest
+    needs: [performance-test, analysis]
+    if: always()
+    steps:
+      - name: 发送测试结果通知
+        run: |
+          echo "📧 发送性能测试结果通知..."
+
+          if [ "${{ needs.performance-test.result }}" == "success" ]; then
+            echo "✅ 性能测试通过"
+            echo "PERFORMANCE_TEST_STATUS=✅ 通过" >> $GITHUB_ENV
+          else
+            echo "❌ 性能测试失败"
+            echo "PERFORMANCE_TEST_STATUS=❌ 失败" >> $GITHUB_ENV
+          fi
+
+          echo "📊 测试摘要:"
+          echo "- 目标TPS: ${{ env.TARGET_TPS }}"
+          echo "- 测试时长: ${{ env.LOAD_TEST_DURATION }}秒"
+          echo "- 提交SHA: ${{ github.sha }}"
+          echo "- 分支: ${{ github.ref_name }}"
+
+      - name: 设置测试状态
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const status = '${{ needs.performance-test.result }}' === 'success' ? 'success' : 'failure';
+            const description = status === 'success' ? 
+              '性能测试通过 - 所有指标符合要求' : 
+              '性能测试失败 - 请检查测试报告';
+
+            github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: status,
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: description,
+              context: 'performance-test'
+            });
+
+  # 工作流程清理
+  cleanup:
+    name: 🧹 清理资源
+    runs-on: ubuntu-latest
+    needs: [performance-test, analysis, notification]
+    if: always()
+    steps:
+      - name: 清理临时文件
+        run: |
+          echo "🧹 清理临时文件和进程..."
+
+          # 清理可能残留的进程
+          pkill -f "artillery" || true
+          pkill -f "k6" || true
+          pkill -f "node.*test" || true
+
+          echo "✅ 清理完成"

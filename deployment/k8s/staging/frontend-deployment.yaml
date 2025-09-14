@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: emr-frontend-staging
+  namespace: emr-staging
+  labels:
+    app: emr-frontend-staging
+    environment: staging
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: emr-frontend-staging
+  template:
+    metadata:
+      labels:
+        app: emr-frontend-staging
+        environment: staging
+    spec:
+      containers:
+      - name: frontend
+        image: IMAGE_TAG_FRONTEND
+        ports:
+        - containerPort: 80
+          name: http
+        env:
+        - name: REACT_APP_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config-staging
+              key: REACT_APP_API_URL
+        - name: REACT_APP_TITLE
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config-staging
+              key: REACT_APP_TITLE
+        - name: REACT_APP_VERSION
+          value: "1.0.0-staging"
+        - name: BUILD_TIME
+          value: "${BUILD_TIME}"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      restartPolicy: Always
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: emr-frontend-service-staging
+  namespace: emr-staging
+  labels:
+    app: emr-frontend-staging
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+  selector:
+    app: emr-frontend-staging

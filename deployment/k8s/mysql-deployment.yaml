@@ -1,0 +1,272 @@
+# MySQL数据库部署配置
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-deployment
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: mysql
+    version: "8.0"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: blockchain-emr
+      component: mysql
+  template:
+    metadata:
+      labels:
+        app: blockchain-emr
+        component: mysql
+        version: "8.0"
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:8.0
+        ports:
+        - containerPort: 3306
+          name: mysql
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: emr-database-secret
+              key: MYSQL_ROOT_PASSWORD
+        - name: MYSQL_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: emr-database-secret
+              key: MYSQL_DATABASE
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: emr-database-secret
+              key: MYSQL_USER
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: emr-database-secret
+              key: MYSQL_PASSWORD
+        volumeMounts:
+        - name: mysql-storage
+          mountPath: /var/lib/mysql
+        - name: mysql-init
+          mountPath: /docker-entrypoint-initdb.d
+          readOnly: true
+        - name: mysql-config
+          mountPath: /etc/mysql/conf.d
+          readOnly: true
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          exec:
+            command:
+            - mysqladmin
+            - ping
+            - -h
+            - localhost
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - mysql
+            - -h
+            - localhost
+            - -u
+            - root
+            - -p$MYSQL_ROOT_PASSWORD
+            - -e
+            - "SELECT 1"
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          runAsUser: 999
+          runAsGroup: 999
+          allowPrivilegeEscalation: false
+      volumes:
+      - name: mysql-storage
+        persistentVolumeClaim:
+          claimName: mysql-pvc
+      - name: mysql-init
+        configMap:
+          name: mysql-init-config
+      - name: mysql-config
+        configMap:
+          name: mysql-config
+      securityContext:
+        fsGroup: 999
+      restartPolicy: Always
+---
+# MySQL服务
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-service
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: mysql
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3306
+    targetPort: 3306
+    protocol: TCP
+    name: mysql
+  selector:
+    app: blockchain-emr
+    component: mysql
+---
+# MySQL持久化存储
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-pvc
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: mysql
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: standard
+---
+# MySQL初始化脚本ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-init-config
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: mysql
+data:
+  init.sql: |
+    -- EMR区块链系统数据库初始化脚本
+    USE emr_blockchain;
+    
+    -- 用户表
+    CREATE TABLE IF NOT EXISTS USERS (
+        user_id VARCHAR(36) PRIMARY KEY,
+        patient_id VARCHAR(50) UNIQUE NOT NULL,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        email VARCHAR(100) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        phone VARCHAR(20),
+        role ENUM('patient', 'doctor', 'admin') NOT NULL DEFAULT 'patient',
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        last_login TIMESTAMP NULL,
+        
+        INDEX idx_patient_id (patient_id),
+        INDEX idx_username (username),
+        INDEX idx_email (email),
+        INDEX idx_role (role),
+        INDEX idx_created_at (created_at),
+        INDEX idx_active_role (is_active, role)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    
+    -- 医疗记录表
+    CREATE TABLE IF NOT EXISTS MEDICAL_RECORDS (
+        record_id VARCHAR(36) PRIMARY KEY,
+        patient_id VARCHAR(50) NOT NULL,
+        doctor_id VARCHAR(36),
+        record_type ENUM('diagnosis', 'prescription', 'lab_result', 'imaging', 'surgery', 'other') NOT NULL,
+        title VARCHAR(200) NOT NULL,
+        description TEXT,
+        ipfs_hash VARCHAR(100),
+        blockchain_tx_id VARCHAR(100),
+        file_size BIGINT DEFAULT 0,
+        file_type VARCHAR(50),
+        encryption_key VARCHAR(255),
+        access_level ENUM('private', 'shared', 'public') DEFAULT 'private',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        
+        FOREIGN KEY (patient_id) REFERENCES USERS(patient_id) ON DELETE CASCADE,
+        FOREIGN KEY (doctor_id) REFERENCES USERS(user_id) ON DELETE SET NULL,
+        
+        INDEX idx_record_id (record_id),
+        INDEX idx_patient_id (patient_id),
+        INDEX idx_doctor_id (doctor_id),
+        INDEX idx_record_type (record_type),
+        INDEX idx_created_at (created_at),
+        INDEX idx_ipfs_hash (ipfs_hash),
+        INDEX idx_blockchain_tx (blockchain_tx_id),
+        INDEX idx_patient_type (patient_id, record_type),
+        INDEX idx_patient_created (patient_id, created_at DESC)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    
+    -- 插入默认管理员用户
+    INSERT INTO USERS (user_id, patient_id, username, email, password_hash, role, is_active) VALUES
+    ('admin-001', 'ADMIN001', 'admin', 'admin@emr.example.com', '$2b$10$rQZ8kHWKQVnqVQZ8kHWKQOvnqVQZ8kHWKQVnqVQZ8kHWKQVnqVQZ8k', 'admin', TRUE)
+    ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP;
+---
+# MySQL配置文件
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-config
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: mysql
+data:
+  my.cnf: |
+    [mysqld]
+    # 基本配置
+    default-storage-engine=INNODB
+    character-set-server=utf8mb4
+    collation-server=utf8mb4_unicode_ci
+    
+    # 性能优化
+    innodb_buffer_pool_size=1G
+    innodb_log_file_size=256M
+    innodb_flush_log_at_trx_commit=2
+    innodb_flush_method=O_DIRECT
+    
+    # 连接配置
+    max_connections=200
+    max_connect_errors=1000
+    wait_timeout=28800
+    interactive_timeout=28800
+    
+    # 查询缓存
+    query_cache_type=1
+    query_cache_size=64M
+    
+    # 慢查询日志
+    slow_query_log=1
+    slow_query_log_file=/var/log/mysql/slow.log
+    long_query_time=2
+    
+    # 二进制日志
+    log-bin=mysql-bin
+    binlog_format=ROW
+    expire_logs_days=7
+    
+    # 安全配置
+    skip-name-resolve
+    
+    [mysql]
+    default-character-set=utf8mb4
+    
+    [client]
+    default-character-set=utf8mb4

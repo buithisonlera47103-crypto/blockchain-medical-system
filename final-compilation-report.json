@@ -1,0 +1,23 @@
+{
+  "timestamp": "2025-08-06T16:04:20.632Z",
+  "summary": {
+    "projectCount": 2,
+    "successCount": 2,
+    "successRate": 100,
+    "duration": "18.43"
+  },
+  "results": {
+    "frontend": {
+      "success": true,
+      "warnings": 2,
+      "buildSize": "271.7",
+      "output": "\n> blockchain-emr-frontend@0.1.0 build\n> react-scripts build\n\nCreating an optimized production build...\nCompiled with warnings.\n\n[eslint] \nsrc/hooks/useAuth.ts\n  Line 22:30:  'removeToken' is defined but never used  @typescript-eslint/no-unused-vars\n\nsrc/utils/inputSanitizer.ts\n  Line 33:14:  Unexpected control character(s) in regular expression: \\x00, \\x1f  no-control-regex\n  Line 72:25:  Unnecessary escape character: \\[                                   no-useless-escape\n\nSearch for the keywords to learn more about each warning.\nTo ignore, add // eslint-disable-next-line to the line before.\n\nFile sizes after gzip:\n\n  271.7 kB  build/static/js/main.df790369.js\n  27.83 kB  build/static/css/main.2a4c5bbf.css\n  3.27 kB   build/static/js/38.afb4c592.chunk.js\n\nThe project was built assuming it is hosted at /.\nYou can control this with the homepage field in your package.json.\n\nThe build folder is ready to be deployed.\nYou may serve it with a static server:\n\n  npm install -g serve\n  serve -s build\n\nFind out more about deployment here:\n\n  https://cra.link/deployment\n\n"
+    },
+    "backend": {
+      "success": true,
+      "warnings": 0,
+      "buildSize": null,
+      "output": "\n> blockchain-emr-backend@1.0.0 build\n> tsc\n\n"
+    }
+  }
+}

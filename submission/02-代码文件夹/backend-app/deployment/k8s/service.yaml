@@ -1,0 +1,342 @@
+# Orderer Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: fabric-orderer
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: orderer
+spec:
+  type: ClusterIP
+  ports:
+    - name: orderer
+      port: 7050
+      targetPort: 7050
+      protocol: TCP
+    - name: operations
+      port: 8443
+      targetPort: 8443
+      protocol: TCP
+  selector:
+    app: fabric-network
+    component: orderer
+
+---
+# Peer Org1 Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: fabric-peer-org1
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: peer
+    organization: org1
+spec:
+  type: ClusterIP
+  ports:
+    - name: peer
+      port: 7051
+      targetPort: 7051
+      protocol: TCP
+    - name: chaincode
+      port: 7052
+      targetPort: 7052
+      protocol: TCP
+    - name: operations
+      port: 9443
+      targetPort: 9443
+      protocol: TCP
+  selector:
+    app: fabric-network
+    component: peer
+    organization: org1
+
+---
+# Peer Org2 Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: fabric-peer-org2
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: peer
+    organization: org2
+spec:
+  type: ClusterIP
+  ports:
+    - name: peer
+      port: 9051
+      targetPort: 9051
+      protocol: TCP
+    - name: chaincode
+      port: 9052
+      targetPort: 9052
+      protocol: TCP
+    - name: operations
+      port: 9444
+      targetPort: 9444
+      protocol: TCP
+  selector:
+    app: fabric-network
+    component: peer
+    organization: org2
+
+---
+# CA Org1 Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: fabric-ca-org1
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: ca
+    organization: org1
+spec:
+  type: ClusterIP
+  ports:
+    - name: ca
+      port: 7054
+      targetPort: 7054
+      protocol: TCP
+    - name: operations
+      port: 17054
+      targetPort: 17054
+      protocol: TCP
+  selector:
+    app: fabric-network
+    component: ca
+    organization: org1
+
+---
+# CA Org2 Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: fabric-ca-org2
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: ca
+    organization: org2
+spec:
+  type: ClusterIP
+  ports:
+    - name: ca
+      port: 8054
+      targetPort: 8054
+      protocol: TCP
+    - name: operations
+      port: 18054
+      targetPort: 18054
+      protocol: TCP
+  selector:
+    app: fabric-network
+    component: ca
+    organization: org2
+
+---
+# CouchDB Org1 Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: couchdb-org1
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: couchdb
+    organization: org1
+spec:
+  type: ClusterIP
+  ports:
+    - name: couchdb
+      port: 5984
+      targetPort: 5984
+      protocol: TCP
+  selector:
+    app: fabric-network
+    component: couchdb
+    organization: org1
+
+---
+# CouchDB Org2 Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: couchdb-org2
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: couchdb
+    organization: org2
+spec:
+  type: ClusterIP
+  ports:
+    - name: couchdb
+      port: 6984
+      targetPort: 5984
+      protocol: TCP
+  selector:
+    app: fabric-network
+    component: couchdb
+    organization: org2
+
+---
+# External LoadBalancer Service for Fabric Network (可选)
+apiVersion: v1
+kind: Service
+metadata:
+  name: fabric-network-external
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: external
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
+spec:
+  type: LoadBalancer
+  ports:
+    # Orderer 外部访问
+    - name: orderer-external
+      port: 7050
+      targetPort: 7050
+      protocol: TCP
+    # Peer Org1 外部访问
+    - name: peer-org1-external
+      port: 7051
+      targetPort: 7051
+      protocol: TCP
+    # Peer Org2 外部访问
+    - name: peer-org2-external
+      port: 9051
+      targetPort: 9051
+      protocol: TCP
+    # CA Org1 外部访问
+    - name: ca-org1-external
+      port: 7054
+      targetPort: 7054
+      protocol: TCP
+    # CA Org2 外部访问
+    - name: ca-org2-external
+      port: 8054
+      targetPort: 8054
+      protocol: TCP
+  selector:
+    app: fabric-network
+
+---
+# Headless Service for StatefulSet (如果使用 StatefulSet)
+apiVersion: v1
+kind: Service
+metadata:
+  name: fabric-network-headless
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: headless
+spec:
+  clusterIP: None
+  ports:
+    - name: orderer
+      port: 7050
+      targetPort: 7050
+    - name: peer-org1
+      port: 7051
+      targetPort: 7051
+    - name: peer-org2
+      port: 9051
+      targetPort: 9051
+  selector:
+    app: fabric-network
+
+---
+# NodePort Service for Development (开发环境使用)
+apiVersion: v1
+kind: Service
+metadata:
+  name: fabric-network-nodeport
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: nodeport
+  annotations:
+    service.alpha.kubernetes.io/tolerate-unready-endpoints: "true"
+spec:
+  type: NodePort
+  ports:
+    # Orderer NodePort
+    - name: orderer-nodeport
+      port: 7050
+      targetPort: 7050
+      nodePort: 30050
+      protocol: TCP
+    # Peer Org1 NodePort
+    - name: peer-org1-nodeport
+      port: 7051
+      targetPort: 7051
+      nodePort: 30051
+      protocol: TCP
+    # Peer Org2 NodePort
+    - name: peer-org2-nodeport
+      port: 9051
+      targetPort: 9051
+      nodePort: 30052
+      protocol: TCP
+    # CA Org1 NodePort
+    - name: ca-org1-nodeport
+      port: 7054
+      targetPort: 7054
+      nodePort: 30054
+      protocol: TCP
+    # CA Org2 NodePort
+    - name: ca-org2-nodeport
+      port: 8054
+      targetPort: 8054
+      nodePort: 30055
+      protocol: TCP
+  selector:
+    app: fabric-network
+
+---
+# Service Monitor for Prometheus (监控)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: fabric-network-monitor
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: monitor
+spec:
+  selector:
+    matchLabels:
+      app: fabric-network
+  endpoints:
+    - port: operations
+      interval: 30s
+      path: /metrics
+    - port: operations
+      interval: 30s
+      path: /metrics
+      targetPort: 8443
+    - port: operations
+      interval: 30s
+      path: /metrics
+      targetPort: 9443
+    - port: operations
+      interval: 30s
+      path: /metrics
+      targetPort: 9444
+    - port: operations
+      interval: 30s
+      path: /metrics
+      targetPort: 17054
+    - port: operations
+      interval: 30s
+      path: /metrics
+      targetPort: 18054

@@ -1,0 +1,172 @@
+# Trivy Configuration for Blockchain EMR Container Security Scanning
+
+# Global settings
+format: json
+output: security/trivy-results.json
+exit-code: 1 # Exit with error code if vulnerabilities found
+severity: CRITICAL,HIGH,MEDIUM
+ignore-unfixed: false
+skip-update: false
+clear-cache: false
+
+# Vulnerability database settings
+db:
+  skip-update: false
+  light: false
+
+# Scanning settings
+scan:
+  # Security scanners to enable
+  security-checks: vuln,secret,config
+
+  # Skip files/directories
+  skip-files:
+    - "**/*.test.ts"
+    - "**/*.spec.ts"
+    - "**/node_modules/**"
+    - "**/test/**"
+    - "**/tests/**"
+    - "**/coverage/**"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/.git/**"
+    - "**/.vscode/**"
+    - "**/.idea/**"
+
+  # Skip directories
+  skip-dirs:
+    - node_modules
+    - .git
+    - .vscode
+    - .idea
+    - dist
+    - build
+    - coverage
+    - logs
+    - tmp
+    - temp
+
+# Vulnerability settings
+vulnerability:
+  type: os,library
+  ignore-unfixed: false
+
+# Secret scanning settings
+secret:
+  config: .gitleaks.toml
+
+# Misconfiguration scanning
+misconfig:
+  include-non-failures: false
+  trace: false
+
+  # Policy settings
+  policy:
+    - policy/docker.rego
+    - policy/kubernetes.rego
+
+  # Namespaces to check
+  namespaces:
+    - main
+    - dockerfile
+    - kubernetes
+
+# License scanning
+license:
+  full: true
+  ignored:
+    - MIT
+    - Apache-2.0
+    - BSD-3-Clause
+    - BSD-2-Clause
+    - ISC
+    - GPL-3.0 # Only if we're not distributing
+
+  # Forbidden licenses (will cause scan to fail)
+  forbidden:
+    - GPL-2.0 # Copyleft license
+    - AGPL-3.0 # Strong copyleft
+    - LGPL-2.1 # Lesser GPL
+
+# Output settings
+report:
+  format: json
+  template: "@contrib/html.tpl" # Also generate HTML report
+
+# Cache settings
+cache:
+  dir: .trivy-cache
+
+# Registry settings (for private registries)
+registry:
+  # Add authentication for private registries if needed
+  # token: ""
+  # username: ""
+  # password: ""
+
+# Ignore file
+ignore-file: .trivyignore
+
+# Custom policies directory
+policy-paths:
+  - policy/
+
+# Timeout settings
+timeout: 5m
+
+# Parallel processing
+parallel: 5
+
+# Quiet mode (reduce output verbosity)
+quiet: false
+
+# Debug mode
+debug: false
+
+# Offline mode (don't update DB)
+offline: false
+
+# Include dev dependencies in scanning
+include-dev-deps: false
+
+# SBOM (Software Bill of Materials) settings
+sbom:
+  format: cyclonedx-json
+  output: security/sbom.json
+
+# Compliance settings
+compliance:
+  spec: docker-cis
+
+# Custom checks for healthcare/blockchain context
+custom-checks:
+  - name: "Healthcare Data Protection"
+    description: "Ensure PHI data protection measures"
+    severity: HIGH
+
+  - name: "Blockchain Security"
+    description: "Blockchain-specific security checks"
+    severity: HIGH
+
+  - name: "HIPAA Compliance"
+    description: "HIPAA compliance requirements"
+    severity: CRITICAL
+
+# Integration settings
+integrations:
+  github:
+    token: ${GITHUB_TOKEN}
+
+  slack:
+    webhook: ${SLACK_WEBHOOK_URL}
+
+  email:
+    smtp:
+      host: ${SMTP_HOST}
+      port: ${SMTP_PORT}
+      username: ${SMTP_USERNAME}
+      password: ${SMTP_PASSWORD}
+    from: security@blockchain-emr.com
+    to:
+      - security-team@blockchain-emr.com
+      - devops@blockchain-emr.com

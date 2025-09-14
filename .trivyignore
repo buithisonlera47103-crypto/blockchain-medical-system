@@ -1,0 +1,42 @@
+# Trivy ignore file for Blockchain EMR System
+# Ignore specific vulnerabilities that are false positives or accepted risks
+
+# Development dependencies vulnerabilities (not in production)
+# These are typically dev-only packages that don't affect production security
+
+# Node.js development dependencies
+CVE-2021-44906  # minimist in dev dependencies
+CVE-2022-25883  # semver in dev dependencies  
+CVE-2021-23343  # path-parse in dev dependencies
+CVE-2022-24999  # qs in dev dependencies (if using older version for compatibility)
+
+# Test framework vulnerabilities (not in production)
+CVE-2020-28469  # glob-parent in test dependencies
+CVE-2021-23382  # postcss in test dependencies
+CVE-2021-23424  # ansi-html in webpack dev server
+
+# Documentation and build tool vulnerabilities
+CVE-2021-44531  # Node.js documentation tools
+CVE-2021-44532  # Node.js documentation tools
+CVE-2021-44533  # Node.js documentation tools
+
+# Base image vulnerabilities that are patched or mitigated
+# (Only add these after careful security review)
+
+# Example: Ubuntu base image CVEs that are mitigated by our security controls
+# CVE-2021-XXXXX  # Description of why this is acceptable
+
+# Alpine Linux CVEs that don't affect our use case
+# CVE-2022-XXXXX  # Description of why this is acceptable
+
+# Temporary ignores for vulnerabilities being addressed
+# (These should have expiration dates and tracking tickets)
+
+# CVE-2023-XXXXX  # Temporary ignore until patch available - Ticket: SEC-123
+# Expires: 2024-02-01
+
+# Known false positives for our specific configuration
+# CVE-2022-XXXXX  # False positive for our Docker configuration
+
+# Vulnerabilities in optional dependencies that we don't use
+# CVE-2021-XXXXX  # Affects optional feature we don't enable

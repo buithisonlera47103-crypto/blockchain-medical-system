@@ -1,0 +1,253 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blockchain-emr-config
+  namespace: blockchain-emr
+  labels:
+    app: blockchain-emr
+data:
+  NODE_ENV: "production"
+  API_VERSION: "v1"
+  LOG_LEVEL: "info"
+  
+  # Database Configuration
+  MYSQL_HOST: "mysql-service"
+  MYSQL_PORT: "3306"
+  MYSQL_DATABASE: "blockchain_emr"
+  MYSQL_CONNECTION_LIMIT: "100"
+  MYSQL_TIMEOUT: "60000"
+  
+  # Redis Configuration
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  REDIS_TTL: "3600"
+  
+  # Blockchain Configuration
+  FABRIC_NETWORK_NAME: "blockchain-emr-network"
+  FABRIC_CHANNEL_NAME: "emr-channel"
+  FABRIC_CHAINCODE_NAME: "emr-chaincode"
+  FABRIC_CHAINCODE_VERSION: "1.0"
+  FABRIC_PEER_ENDPOINT: "fabric-peer-service:7051"
+  FABRIC_ORDERER_ENDPOINT: "fabric-orderer-service:7050"
+  FABRIC_CA_ENDPOINT: "fabric-ca-service:7054"
+  
+  # IPFS Configuration
+  IPFS_HOST: "ipfs-service"
+  IPFS_PORT: "5001"
+  IPFS_PROTOCOL: "http"
+  IPFS_TIMEOUT: "30000"
+  IPFS_CLUSTER_HOST: "ipfs-cluster-service"
+  IPFS_CLUSTER_PORT: "9094"
+  
+  # Security Configuration
+  JWT_EXPIRES_IN: "8h"
+  JWT_REFRESH_EXPIRES_IN: "7d"
+  JWT_ISSUER: "blockchain-emr-system"
+  JWT_AUDIENCE: "emr-users"
+  ENCRYPTION_ALGORITHM: "AES-256-GCM"
+  BCRYPT_ROUNDS: "12"
+  SESSION_TIMEOUT: "28800"
+  SESSION_SECURE: "true"
+  SESSION_HTTP_ONLY: "true"
+  SESSION_SAME_SITE: "strict"
+  
+  # CORS Configuration
+  CORS_CREDENTIALS: "true"
+  CORS_METHODS: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS"
+  CORS_ALLOWED_HEADERS: "Content-Type,Authorization,X-Requested-With"
+  
+  # Rate Limiting
+  RATE_LIMIT_WINDOW_MS: "900000"
+  RATE_LIMIT_MAX_REQUESTS: "100"
+  
+  # Monitoring Configuration
+  LOG_FORMAT: "combined"
+  LOG_MAX_SIZE: "50m"
+  LOG_MAX_FILES: "10"
+  PERFORMANCE_MONITORING_ENABLED: "true"
+  PERFORMANCE_METRICS_INTERVAL: "5000"
+  PERFORMANCE_TPS_TARGET: "1000"
+  PERFORMANCE_LATENCY_TARGET: "100"
+  PERFORMANCE_ERROR_RATE_TARGET: "1"
+  HEALTH_CHECK_ENABLED: "true"
+  HEALTH_CHECK_INTERVAL: "30000"
+  HEALTH_CHECK_TIMEOUT: "5000"
+  METRICS_ENABLED: "true"
+  METRICS_PORT: "9090"
+  PROMETHEUS_ENABLED: "true"
+  
+  # Storage Configuration
+  STORAGE_L1_ENABLED: "true"
+  STORAGE_L1_TYPE: "redis"
+  STORAGE_L1_TTL: "3600"
+  STORAGE_L1_MAX_SIZE: "2GB"
+  STORAGE_L2_ENABLED: "true"
+  STORAGE_L2_TYPE: "mysql"
+  STORAGE_L2_TTL: "86400"
+  STORAGE_L2_MAX_SIZE: "500GB"
+  STORAGE_L3_ENABLED: "true"
+  STORAGE_L3_TYPE: "ipfs"
+  STORAGE_L3_TTL: "2592000"
+  STORAGE_L3_MAX_SIZE: "10TB"
+  STORAGE_L4_ENABLED: "true"
+  STORAGE_L4_TYPE: "cold_storage"
+  STORAGE_L4_TTL: "31536000"
+  STORAGE_L4_PROVIDER: "aws_s3"
+  
+  # File Upload Configuration
+  UPLOAD_MAX_FILE_SIZE: "100MB"
+  UPLOAD_ALLOWED_TYPES: "pdf,jpg,jpeg,png,dcm,txt,doc,docx"
+  UPLOAD_VIRUS_SCAN_ENABLED: "true"
+  
+  # Production Settings
+  PROD_FORCE_HTTPS: "true"
+  PROD_TRUST_PROXY: "true"
+  PROD_HELMET_ENABLED: "true"
+  PROD_COMPRESSION_ENABLED: "true"
+  PROD_CLUSTER_MODE: "false"
+  PROD_KEEP_ALIVE_TIMEOUT: "65000"
+  PROD_HEADERS_TIMEOUT: "66000"
+  
+  # Feature Flags
+  FEATURE_MULTI_FACTOR_AUTH: "true"
+  FEATURE_BIOMETRIC_AUTH: "true"
+  FEATURE_BLOCKCHAIN_ANALYTICS: "true"
+  FEATURE_AI_DIAGNOSTICS: "false"
+  FEATURE_TELEMEDICINE: "true"
+  FEATURE_MOBILE_APP: "true"
+  
+  # Compliance Settings
+  AUDIT_ENABLED: "true"
+  AUDIT_LOG_ALL_REQUESTS: "true"
+  AUDIT_LOG_SENSITIVE_DATA: "false"
+  AUDIT_RETENTION_DAYS: "2555"
+  HIPAA_COMPLIANCE: "true"
+  GDPR_COMPLIANCE: "true"
+  DATA_RETENTION_POLICY: "7_years"
+  ANONYMIZATION_ENABLED: "true"
+  
+  # Backup Settings
+  BACKUP_ENABLED: "true"
+  BACKUP_SCHEDULE: "0 2 * * *"
+  BACKUP_RETENTION_DAYS: "90"
+  BACKUP_COMPRESSION: "true"
+  BACKUP_ENCRYPTION: "true"
+  
+  # Disaster Recovery
+  DR_ENABLED: "true"
+  DR_SYNC_INTERVAL: "3600"
+  DR_FAILOVER_THRESHOLD: "300"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: blockchain-emr
+  labels:
+    app: nginx
+data:
+  nginx.conf: |
+    user nginx;
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /var/run/nginx.pid;
+    
+    events {
+        worker_connections 1024;
+        use epoll;
+        multi_accept on;
+    }
+    
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+        
+        log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                        '$status $body_bytes_sent "$http_referer" '
+                        '"$http_user_agent" "$http_x_forwarded_for"';
+        
+        access_log /var/log/nginx/access.log main;
+        
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 65;
+        types_hash_max_size 2048;
+        
+        # Security headers
+        add_header X-Frame-Options DENY;
+        add_header X-Content-Type-Options nosniff;
+        add_header X-XSS-Protection "1; mode=block";
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'";
+        
+        # Rate limiting
+        limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+        limit_req_zone $binary_remote_addr zone=login:10m rate=1r/s;
+        
+        # Upstream backend servers
+        upstream backend {
+            least_conn;
+            server backend-service:3000 max_fails=3 fail_timeout=30s;
+            keepalive 32;
+        }
+        
+        server {
+            listen 80;
+            server_name _;
+            return 301 https://$server_name$request_uri;
+        }
+        
+        server {
+            listen 443 ssl http2;
+            server_name _;
+            
+            ssl_certificate /etc/nginx/ssl/tls.crt;
+            ssl_certificate_key /etc/nginx/ssl/tls.key;
+            ssl_protocols TLSv1.2 TLSv1.3;
+            ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384;
+            ssl_prefer_server_ciphers off;
+            ssl_session_cache shared:SSL:10m;
+            ssl_session_timeout 10m;
+            
+            # API endpoints
+            location /api/ {
+                limit_req zone=api burst=20 nodelay;
+                proxy_pass http://backend;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_connect_timeout 30s;
+                proxy_send_timeout 30s;
+                proxy_read_timeout 30s;
+            }
+            
+            # Authentication endpoints with stricter rate limiting
+            location /api/v1/auth/ {
+                limit_req zone=login burst=5 nodelay;
+                proxy_pass http://backend;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+            
+            # Frontend application
+            location / {
+                proxy_pass http://frontend-service:3000;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+            
+            # Health check endpoint
+            location /health {
+                access_log off;
+                return 200 "healthy\n";
+                add_header Content-Type text/plain;
+            }
+        }
+    }

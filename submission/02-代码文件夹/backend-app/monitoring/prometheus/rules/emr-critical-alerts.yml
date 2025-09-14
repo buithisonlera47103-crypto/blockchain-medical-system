@@ -1,0 +1,386 @@
+# Critical Alerting Rules for EMR Blockchain System
+# Healthcare-specific alerts for compliance, security, and operational excellence
+# Aligned with read111.md requirements for 99.9% uptime
+
+groups:
+  - name: emr_critical_alerts
+    interval: 30s
+    rules:
+      # System Availability Alerts
+      - alert: EMRSystemDown
+        expr: up{job="emr-backend"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          category: availability
+          compliance: hipaa
+        annotations:
+          summary: "EMR Backend System is Down"
+          description: "The EMR backend system has been unreachable for more than 30 seconds. This is a critical service outage affecting patient care."
+          runbook_url: "https://docs.emr.com/runbooks/system-down"
+          impact: "Complete service outage - patient data inaccessible"
+
+      - alert: FabricNetworkDown
+        expr: up{job=~"fabric-.*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: blockchain
+          compliance: hipaa
+        annotations:
+          summary: "Fabric Network Component Down"
+          description: "Fabric network component {{ $labels.instance }} has been down for more than 1 minute."
+          runbook_url: "https://docs.emr.com/runbooks/fabric-network-down"
+          impact: "Blockchain operations affected - data integrity at risk"
+
+      - alert: IPFSClusterDown
+        expr: up{job="ipfs-cluster"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: storage
+          compliance: hipaa
+        annotations:
+          summary: "IPFS Cluster Node Down"
+          description: "IPFS cluster node {{ $labels.instance }} has been unreachable for more than 2 minutes."
+          runbook_url: "https://docs.emr.com/runbooks/ipfs-cluster-down"
+          impact: "File storage and retrieval affected"
+
+      - alert: DatabaseDown
+        expr: up{job="postgres-exporter"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          category: database
+          compliance: hipaa
+        annotations:
+          summary: "Primary Database is Down"
+          description: "The primary PostgreSQL database is unreachable. This affects all EMR operations."
+          runbook_url: "https://docs.emr.com/runbooks/database-down"
+          impact: "Complete data access failure"
+
+      # Performance Degradation Alerts
+      - alert: HighResponseLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="emr-backend"}[5m])) > 5
+        for: 3m
+        labels:
+          severity: warning
+          category: performance
+          compliance: performance_sla
+        annotations:
+          summary: "High Response Latency Detected"
+          description: "95th percentile response time is {{ $value }}s, exceeding 5s threshold for 3 minutes."
+          runbook_url: "https://docs.emr.com/runbooks/high-latency"
+          impact: "User experience degradation"
+
+      - alert: LowThroughput
+        expr: rate(emr_transactions_total[5m]) < 500
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+          compliance: performance_sla
+        annotations:
+          summary: "Transaction Throughput Below Target"
+          description: "Current TPS is {{ $value }}, below 500 TPS minimum for 5 minutes."
+          runbook_url: "https://docs.emr.com/runbooks/low-throughput"
+          impact: "System performance below SLA requirements"
+
+
+      # Application cache effectiveness (requires cache_get_hit_total/miss_total counters)
+      - alert: EMRCacheHitRateLow
+        expr: (increase(cache_get_hit_total[5m])) / (increase(cache_get_hit_total[5m]) + increase(cache_get_miss_total[5m])) < 0.7
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Cache hit rate below 70%"
+          description: "Cache hit rate is {{ $value | humanizePercentage }} over the last 5m, below target."
+          runbook_url: "https://docs.emr.com/runbooks/cache-hit-rate"
+          impact: "Increased DB load and higher latency"
+
+      # Database query performance (custom exporter metrics)
+      - alert: EMRDBSlowQueriesHigh
+        expr: avg_over_time(db_query_duration_ms[5m]) > 200
+        for: 3m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "Average DB query duration high (>200ms)"
+          description: "Average db_query_duration_ms over 5m is {{ $value }}ms"
+          runbook_url: "https://docs.emr.com/runbooks/db-slow-queries"
+          impact: "Elevated latency and lower TPS"
+
+      - alert: EMRDBPoolSaturation
+        expr: db_pool_utilization_percent > 85
+        for: 3m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "DB pool utilization above 85%"
+          description: "Database connection pool utilization is {{ $value }}%"
+          runbook_url: "https://docs.emr.com/runbooks/db-pool"
+          impact: "Connection contention and timeouts possible"
+
+      # IPFS throughput and latency (custom metrics)
+      - alert: EMRIPFSAddLatencyHigh
+        expr: avg_over_time(ipfs_add_duration_ms[5m]) > 1000
+        for: 3m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "IPFS add latency high"
+          description: "Average ipfs_add_duration_ms over 5m is {{ $value }}ms"
+          runbook_url: "https://docs.emr.com/runbooks/ipfs-latency"
+          impact: "Upload performance degraded"
+
+      - alert: EMRIPFSCatLatencyHigh
+        expr: avg_over_time(ipfs_cat_duration_ms[5m]) > 1000
+        for: 3m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "IPFS retrieval latency high"
+          description: "Average ipfs_cat_duration_ms over 5m is {{ $value }}ms"
+          runbook_url: "https://docs.emr.com/runbooks/ipfs-latency"
+          impact: "Download performance degraded"
+
+      # App-level TPS and latency (using app-exported counters)
+      - alert: EMRThroughputLow
+        expr: rate(http_requests_total[1m]) < 500
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "HTTP request throughput below 500 req/s"
+          description: "Current req/s: {{ $value }} over 1m"
+          runbook_url: "https://docs.emr.com/runbooks/throughput"
+          impact: "Below TPS target"
+
+      - alert: EMRLatencyAvgHigh
+        expr: avg_over_time(http_request_duration_ms[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Average HTTP latency above 100ms"
+          description: "Average http_request_duration_ms over 5m is {{ $value }}ms"
+          runbook_url: "https://docs.emr.com/runbooks/latency"
+          impact: "User-perceived slowness"
+
+      - alert: HighErrorRate
+        expr: rate(emr_errors_total[5m]) / rate(emr_requests_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          category: reliability
+          compliance: hipaa
+        annotations:
+          summary: "High Error Rate Detected"
+          description: "Error rate is {{ $value | humanizePercentage }}, exceeding 5% threshold."
+          runbook_url: "https://docs.emr.com/runbooks/high-error-rate"
+          impact: "Service reliability compromised"
+
+      # Security Alerts
+      - alert: SecurityBreach
+        expr: increase(emr_security_violations_total[5m]) > 0
+        for: 0s
+        labels:
+          severity: critical
+          category: security
+          compliance: hipaa
+        annotations:
+          summary: "Security Violation Detected"
+          description: "{{ $value }} security violations detected in the last 5 minutes."
+          runbook_url: "https://docs.emr.com/runbooks/security-breach"
+          impact: "Potential data breach - immediate investigation required"
+
+      - alert: UnauthorizedAccess
+        expr: increase(emr_unauthorized_access_total[1m]) > 5
+        for: 0s
+        labels:
+          severity: critical
+          category: security
+          compliance: hipaa
+        annotations:
+          summary: "Multiple Unauthorized Access Attempts"
+          description: "{{ $value }} unauthorized access attempts in the last minute."
+          runbook_url: "https://docs.emr.com/runbooks/unauthorized-access"
+          impact: "Potential security attack in progress"
+
+      - alert: CertificateExpiringSoon
+        expr: (emr_certificate_expiry_timestamp - time()) / 86400 < 30
+        for: 1h
+        labels:
+          severity: warning
+          category: security
+          compliance: hipaa
+        annotations:
+          summary: "TLS Certificate Expiring Soon"
+          description: "Certificate {{ $labels.certificate }} expires in {{ $value }} days."
+          runbook_url: "https://docs.emr.com/runbooks/certificate-renewal"
+          impact: "Service disruption if certificate expires"
+
+      # Resource Exhaustion Alerts
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "High CPU Usage"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }}."
+          runbook_url: "https://docs.emr.com/runbooks/high-cpu"
+          impact: "Performance degradation risk"
+
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "High Memory Usage"
+          description: "Memory usage is {{ $value }}% on {{ $labels.instance }}."
+          runbook_url: "https://docs.emr.com/runbooks/high-memory"
+          impact: "System stability at risk"
+
+      - alert: DiskSpaceLow
+        expr: (1 - (node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"})) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "Low Disk Space"
+          description: "Disk usage is {{ $value }}% on {{ $labels.instance }} {{ $labels.mountpoint }}."
+          runbook_url: "https://docs.emr.com/runbooks/low-disk-space"
+          impact: "Service interruption risk"
+
+      # Blockchain-Specific Alerts
+      - alert: BlockProductionStopped
+        expr: increase(fabric_blocks_total[10m]) == 0
+        for: 10m
+        labels:
+          severity: critical
+          category: blockchain
+          compliance: hipaa
+        annotations:
+          summary: "Block Production Has Stopped"
+          description: "No new blocks have been produced in the last 10 minutes."
+          runbook_url: "https://docs.emr.com/runbooks/block-production-stopped"
+          impact: "Blockchain network halted - transactions not processing"
+
+      - alert: ConsensusFailure
+        expr: fabric_consensus_failures_total > 0
+        for: 1m
+        labels:
+          severity: critical
+          category: blockchain
+          compliance: hipaa
+        annotations:
+          summary: "Consensus Failure Detected"
+          description: "Consensus failures detected in Fabric network."
+          runbook_url: "https://docs.emr.com/runbooks/consensus-failure"
+          impact: "Network integrity compromised"
+
+      - alert: ChaincodeCrash
+        expr: increase(fabric_chaincode_crashes_total[5m]) > 0
+        for: 0s
+        labels:
+          severity: critical
+          category: blockchain
+          compliance: hipaa
+        annotations:
+          summary: "Chaincode Crash Detected"
+          description: "Chaincode {{ $labels.chaincode }} has crashed."
+          runbook_url: "https://docs.emr.com/runbooks/chaincode-crash"
+          impact: "Smart contract functionality unavailable"
+
+      # IPFS-Specific Alerts
+      - alert: IPFSReplicationFailure
+        expr: ipfs_cluster_pin_replication_factor < 2
+        for: 5m
+        labels:
+          severity: critical
+          category: storage
+          compliance: hipaa
+        annotations:
+          summary: "IPFS Replication Factor Too Low"
+          description: "Replication factor is {{ $value }}, below minimum of 2."
+          runbook_url: "https://docs.emr.com/runbooks/ipfs-replication-failure"
+          impact: "Data redundancy compromised"
+
+      - alert: IPFSStorageFull
+        expr: ipfs_repo_size_bytes / ipfs_repo_size_limit_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "IPFS Storage Nearly Full"
+          description: "IPFS storage is {{ $value | humanizePercentage }} full on {{ $labels.instance }}."
+          runbook_url: "https://docs.emr.com/runbooks/ipfs-storage-full"
+          impact: "File storage capacity exhaustion risk"
+
+      # Compliance Alerts
+      - alert: AuditLogFailure
+        expr: increase(emr_audit_log_failures_total[5m]) > 0
+        for: 0s
+        labels:
+          severity: critical
+          category: compliance
+          compliance: hipaa
+        annotations:
+          summary: "Audit Log Failure"
+          description: "{{ $value }} audit log failures in the last 5 minutes."
+          runbook_url: "https://docs.emr.com/runbooks/audit-log-failure"
+          impact: "Compliance violation - audit trail compromised"
+
+      - alert: DataRetentionViolation
+        expr: emr_data_retention_violations_total > 0
+        for: 0s
+        labels:
+          severity: critical
+          category: compliance
+          compliance: hipaa
+        annotations:
+          summary: "Data Retention Policy Violation"
+          description: "Data retention policy violations detected."
+          runbook_url: "https://docs.emr.com/runbooks/data-retention-violation"
+          impact: "Regulatory compliance at risk"
+
+      # Business Continuity Alerts
+      - alert: BackupFailure
+        expr: time() - emr_last_successful_backup_timestamp > 86400
+        for: 1h
+        labels:
+          severity: critical
+          category: backup
+          compliance: hipaa
+        annotations:
+          summary: "Backup Failure"
+          description: "No successful backup in the last 24 hours."
+          runbook_url: "https://docs.emr.com/runbooks/backup-failure"
+          impact: "Data recovery capability compromised"
+
+      - alert: DisasterRecoveryTest
+        expr: time() - emr_last_dr_test_timestamp > 2592000  # 30 days
+        for: 1h
+        labels:
+          severity: warning
+          category: disaster_recovery
+          compliance: hipaa
+        annotations:
+          summary: "Disaster Recovery Test Overdue"
+          description: "Disaster recovery test has not been performed in 30 days."
+          runbook_url: "https://docs.emr.com/runbooks/dr-test-overdue"
+          impact: "DR readiness uncertain"

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: emr-config-staging
+  namespace: emr-staging
+data:
+  NODE_ENV: "staging"
+  DB_HOST: "mysql-service-staging"
+  DB_PORT: "3306"
+  DB_NAME: "emr_blockchain_staging"
+  REDIS_HOST: "redis-service-staging"
+  REDIS_PORT: "6379"
+  IPFS_HOST: "ipfs-service-staging"
+  IPFS_PORT: "5001"
+  LOG_LEVEL: "debug"
+  REACT_APP_API_URL: "https://staging-api.emr-blockchain.com"
+  REACT_APP_TITLE: "EMR系统 (测试环境)"

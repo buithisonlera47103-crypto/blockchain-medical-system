@@ -1,0 +1,295 @@
+version: '3.8'
+
+services:
+  # ===== 后端服务 =====
+  backend:
+    build: 
+      context: ../backend-app
+      dockerfile: Dockerfile
+    container_name: emr-backend
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      # Backend expects MYSQL_* per src/config/database.ts
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=emr_blockchain
+      - MYSQL_USER=emr_user
+      - MYSQL_PASSWORD_FILE=/run/secrets/mysql_password
+      # Optional caches
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD_FILE=/run/secrets/redis_password
+      # IPFS client URL expected by IPFSService
+      - IPFS_API_URL=http://ipfs:5001
+      # Security - Use Docker secrets
+      - JWT_SECRET_FILE=/run/secrets/jwt_secret
+      - JWT_REFRESH_SECRET_FILE=/run/secrets/jwt_refresh_secret
+      - ENCRYPTION_KEY_FILE=/run/secrets/encryption_key
+      - SESSION_SECRET_FILE=/run/secrets/session_secret
+      # CORS Configuration
+      - ALLOWED_ORIGINS=https://yourdomain.com,https://app.yourdomain.com
+      # Enable record-level data key mode
+      - KMS_MODE=envelope
+      # Fabric network configuration
+      - FABRIC_CHANNEL_NAME=mychannel
+      - FABRIC_CHAINCODE_NAME=emr
+      # Security settings
+      - BCRYPT_ROUNDS=12
+      - LOG_LEVEL=warn
+      - ENABLE_SWAGGER=false
+    volumes:
+      - backend_logs:/app/logs
+      - backend_uploads:/app/uploads
+    secrets:
+      - mysql_password
+      - redis_password
+      - jwt_secret
+      - jwt_refresh_secret
+      - encryption_key
+      - session_secret
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - emr_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ===== 前端服务 =====
+  frontend:
+    build:
+      context: ../react-app
+      dockerfile: Dockerfile
+    container_name: emr-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - REACT_APP_API_URL=http://localhost:3001
+      - REACT_APP_TITLE=区块链EMR系统
+      - REACT_APP_VERSION=1.0.0
+    depends_on:
+      - backend
+    networks:
+      - emr_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===== MySQL数据库 =====
+  mysql:
+    image: docker.m.daocloud.io/library/mysql:8.0
+    container_name: emr-mysql
+    ports:
+      - "3307:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=emr_blockchain
+      - MYSQL_USER=emr_user
+      - MYSQL_PASSWORD=userpassword
+      - MYSQL_CHARACTER_SET_SERVER=utf8mb4
+      - MYSQL_COLLATION_SERVER=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ../backend-app/src/database:/docker-entrypoint-initdb.d:ro
+      - ./deployment/mysql/my.cnf:/etc/mysql/conf.d/my.cnf:ro
+    networks:
+      - emr_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ===== Redis缓存 =====
+  redis:
+    image: docker.m.daocloud.io/library/redis:7-alpine
+    container_name: emr-redis
+    ports:
+      - "6380:6379"
+    command: redis-server --appendonly yes --requirepass redis_password
+    volumes:
+      - redis_data:/data
+      - ./deployment/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    networks:
+      - emr_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis_password", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===== IPFS节点 =====
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: emr-ipfs
+    ports:
+      - "4001:4001"     # P2P swarm
+      - "5001:5001"     # API server
+      - "8080:8080"     # Gateway
+    volumes:
+      - ipfs_data:/data/ipfs
+    networks:
+      - emr_network
+    restart: unless-stopped
+    environment:
+      - IPFS_PROFILE=server
+
+  # ===== Nginx反向代理 =====
+  nginx:
+    image: docker.m.daocloud.io/library/nginx:1.25-alpine
+    container_name: emr-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deployment/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deployment/nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - emr_network
+    restart: unless-stopped
+
+  # ===== Prometheus监控 =====
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: emr-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deployment/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      - emr_network
+    restart: unless-stopped
+
+  # ===== Grafana仪表板 =====
+  grafana:
+    image: grafana/grafana:latest
+    container_name: emr-grafana
+    ports:
+      - "3002:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deployment/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./deployment/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    networks:
+      - emr_network
+    restart: unless-stopped
+
+  # ===== 日志收集 (ELK Stack可选) =====
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: emr-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - emr_network
+    restart: unless-stopped
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.0
+    container_name: emr-logstash
+    volumes:
+      - ./deployment/logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - backend_logs:/var/log/backend:ro
+      - nginx_logs:/var/log/nginx:ro
+    depends_on:
+      - elasticsearch
+    networks:
+      - emr_network
+    restart: unless-stopped
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: emr-kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    networks:
+      - emr_network
+    restart: unless-stopped
+
+# ===== 网络配置 =====
+networks:
+  emr_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# ===== 数据卷 =====
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  ipfs_data:
+    driver: local
+  backend_logs:
+    driver: local
+  backend_uploads:
+    driver: local
+  nginx_logs:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  elasticsearch_data:
+    driver: local
+
+# ===== Docker Secrets =====
+secrets:
+  mysql_root_password:
+    file: ./secrets/mysql_root_password.txt
+  mysql_password:
+    file: ./secrets/mysql_password.txt
+  redis_password:
+    file: ./secrets/redis_password.txt
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt
+  jwt_refresh_secret:
+    file: ./secrets/jwt_refresh_secret.txt
+  encryption_key:
+    file: ./secrets/encryption_key.txt
+  session_secret:
+    file: ./secrets/session_secret.txt

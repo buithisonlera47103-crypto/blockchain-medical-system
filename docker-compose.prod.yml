@@ -1,0 +1,310 @@
+version: "3.8"
+
+services:
+  # Production MySQL with replication
+  mysql-master:
+    image: mysql:8.0
+    container_name: blockchain-emr-mysql-master
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_REPLICATION_USER: replicator
+      MYSQL_REPLICATION_PASSWORD: ${MYSQL_REPLICATION_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_master_data:/var/lib/mysql
+      - ./database/init:/docker-entrypoint-initdb.d
+      - ./database/config/master.cnf:/etc/mysql/conf.d/mysql.cnf
+    networks:
+      - blockchain-emr-network
+    command: --server-id=1 --log-bin=mysql-bin --binlog-do-db=${MYSQL_DATABASE}
+
+  mysql-slave:
+    image: mysql:8.0
+    container_name: blockchain-emr-mysql-slave
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_MASTER_HOST: mysql-master
+      MYSQL_REPLICATION_USER: replicator
+      MYSQL_REPLICATION_PASSWORD: ${MYSQL_REPLICATION_PASSWORD}
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_slave_data:/var/lib/mysql
+      - ./database/config/slave.cnf:/etc/mysql/conf.d/mysql.cnf
+    networks:
+      - blockchain-emr-network
+    depends_on:
+      - mysql-master
+    command: --server-id=2 --relay-log=relay-log --read-only=1
+
+  # Redis Cluster
+  redis-master:
+    image: redis:7-alpine
+    container_name: blockchain-emr-redis-master
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_master_data:/data
+      - ./redis/redis-master.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - blockchain-emr-network
+
+  redis-slave:
+    image: redis:7-alpine
+    container_name: blockchain-emr-redis-slave
+    restart: always
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_slave_data:/data
+      - ./redis/redis-slave.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - blockchain-emr-network
+    depends_on:
+      - redis-master
+
+  # IPFS Cluster with 3 nodes
+  ipfs-cluster-0:
+    image: ipfs/ipfs-cluster:latest
+    container_name: ipfs-cluster-0
+    restart: always
+    environment:
+      CLUSTER_PEERNAME: cluster0
+      CLUSTER_SECRET: ${IPFS_CLUSTER_SECRET}
+      CLUSTER_IPFSHTTP_NODEMULTIADDRESS: /dns4/ipfs-0/tcp/5001
+      CLUSTER_CRDT_TRUSTEDPEERS: "*"
+      CLUSTER_RESTAPI_HTTPLISTENMULTIADDRESS: /ip4/0.0.0.0/tcp/9094
+      CLUSTER_MONITORPINGINTERVAL: 2s
+      IPFS_BOOTSTRAP_RM_ALL: "true"
+    ports:
+      - "9094:9094"
+      - "9096:9096"
+    volumes:
+      - ipfs_cluster_0:/data/ipfs-cluster
+    networks:
+      - blockchain-emr-network
+
+  ipfs-0:
+    image: ipfs/kubo:latest
+    container_name: ipfs-0
+    restart: always
+    environment:
+      IPFS_PROFILE: server
+    ports:
+      - "4001:4001"
+      - "5001:5001"
+    volumes:
+      - ipfs_0_data:/data/ipfs
+    networks:
+      - blockchain-emr-network
+
+  # Load Balancer (Nginx)
+  nginx:
+    image: nginx:alpine
+    container_name: blockchain-emr-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./nginx/logs:/var/log/nginx
+    networks:
+      - blockchain-emr-network
+    depends_on:
+      - backend-1
+      - backend-2
+      - frontend
+
+  # Backend instances for load balancing
+  backend-1:
+    build:
+      context: ./backend-app
+      dockerfile: Dockerfile.prod
+    container_name: blockchain-emr-backend-1
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - INSTANCE_ID=backend-1
+      - MYSQL_HOST=mysql-master
+      - MYSQL_SLAVE_HOST=mysql-slave
+      - REDIS_HOST=redis-master
+      - IPFS_HOST=ipfs-0
+      - FABRIC_PEER_ENDPOINT=peer0.org1.example.com:7051
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - MASTER_ENCRYPTION_KEY=${MASTER_ENCRYPTION_KEY}
+    volumes:
+      - ./fabric:/app/fabric
+      - backend_1_logs:/app/logs
+    networks:
+      - blockchain-emr-network
+    depends_on:
+      - mysql-master
+      - redis-master
+      - ipfs-0
+
+  backend-2:
+    build:
+      context: ./backend-app
+      dockerfile: Dockerfile.prod
+    container_name: blockchain-emr-backend-2
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - INSTANCE_ID=backend-2
+      - MYSQL_HOST=mysql-master
+      - MYSQL_SLAVE_HOST=mysql-slave
+      - REDIS_HOST=redis-master
+      - IPFS_HOST=ipfs-0
+      - FABRIC_PEER_ENDPOINT=peer0.org1.example.com:7051
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - MASTER_ENCRYPTION_KEY=${MASTER_ENCRYPTION_KEY}
+    volumes:
+      - ./fabric:/app/fabric
+      - backend_2_logs:/app/logs
+    networks:
+      - blockchain-emr-network
+    depends_on:
+      - mysql-master
+      - redis-master
+      - ipfs-0
+
+  # Monitoring Stack
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: blockchain-emr-prometheus
+    restart: always
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--storage.tsdb.retention.time=200h"
+      - "--web.enable-lifecycle"
+    networks:
+      - blockchain-emr-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: blockchain-emr-grafana
+    restart: always
+    ports:
+      - "3002:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - blockchain-emr-network
+    depends_on:
+      - prometheus
+
+  # Log aggregation
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+    container_name: blockchain-emr-elasticsearch
+    restart: always
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - blockchain-emr-network
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.8.0
+    container_name: blockchain-emr-logstash
+    restart: always
+    volumes:
+      - ./logging/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+    networks:
+      - blockchain-emr-network
+    depends_on:
+      - elasticsearch
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.8.0
+    container_name: blockchain-emr-kibana
+    restart: always
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    networks:
+      - blockchain-emr-network
+    depends_on:
+      - elasticsearch
+
+  # Backup service
+  backup:
+    build:
+      context: ./backup
+      dockerfile: Dockerfile
+    container_name: blockchain-emr-backup
+    restart: always
+    environment:
+      - BACKUP_SCHEDULE=${BACKUP_SCHEDULE:-0 2 * * *}
+      - MYSQL_HOST=mysql-master
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - S3_BUCKET=${BACKUP_S3_BUCKET}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+    volumes:
+      - backup_data:/backup
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - blockchain-emr-network
+    depends_on:
+      - mysql-master
+
+volumes:
+  mysql_master_data:
+  mysql_slave_data:
+  redis_master_data:
+  redis_slave_data:
+  ipfs_cluster_0:
+  ipfs_0_data:
+  backend_1_logs:
+  backend_2_logs:
+  prometheus_data:
+  grafana_data:
+  elasticsearch_data:
+  backup_data:
+
+networks:
+  blockchain-emr-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

@@ -1,0 +1,1770 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 可访问性相关样式 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sr-only:focus,
+.focus\:not-sr-only:focus {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: inherit;
+  margin: inherit;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+}
+
+/* 减少动画的用户偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* 高对比度模式支持 */
+@media (prefers-contrast: high) {
+  .high-contrast {
+    --tw-border-opacity: 1;
+    border-color: rgb(0 0 0 / var(--tw-border-opacity));
+  }
+  
+  .high-contrast button,
+  .high-contrast input,
+  .high-contrast select,
+  .high-contrast textarea {
+    --tw-border-opacity: 1;
+    border-color: rgb(0 0 0 / var(--tw-border-opacity));
+    border-width: 2px;
+  }
+}
+
+/* 屏幕阅读器激活时的样式 */
+.screen-reader-active {
+  /* 为屏幕阅读器用户优化的样式 */
+}
+
+/* 跳转链接样式 */
+.skip-links a {
+  position: absolute;
+  top: -40px;
+  left: 6px;
+  background: #000;
+  color: #fff;
+  padding: 8px;
+  text-decoration: none;
+  z-index: 1000;
+}
+
+.skip-links a:focus {
+  top: 6px;
+}
+
+/* 焦点指示器增强 */
+*:focus-visible {
+  outline: 2px solid #0066CC;
+  outline-offset: 2px;
+}
+
+/* 确保焦点在高对比度模式下可见 */
+@media (prefers-contrast: high) {
+  *:focus-visible {
+    outline: 3px solid currentColor;
+    outline-offset: 2px;
+  }
+}
+
+/* 全局样式重置和基础设置 */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: linear-gradient(135deg, #E6F0FA 0%, #FFFFFF 100%);
+  min-height: 100vh;
+  color: #333333;
+  line-height: 1.6;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
+
+/* 医疗主题颜色变量 - 现代化升级 */
+:root {
+  /* 主色调 - 现代医疗蓝 */
+  --medical-primary: #0066CC;
+  --medical-primary-light: #2B7DE9;
+  --medical-primary-dark: #003D7A;
+  --medical-primary-50: #EBF4FF;
+  --medical-primary-100: #DBEAFE;
+  --medical-primary-200: #BFDBFE;
+  --medical-primary-300: #93C5FD;
+  --medical-primary-400: #60A5FA;
+  --medical-primary-500: #3B82F6;
+  --medical-primary-600: #2563EB;
+  --medical-primary-700: #1D4ED8;
+  --medical-primary-800: #1E40AF;
+  --medical-primary-900: #1E3A8A;
+  
+  /* 辅助色 - 现代医疗绿 */
+  --medical-secondary: #059669;
+  --medical-secondary-light: #10B981;
+  --medical-secondary-dark: #047857;
+  --medical-secondary-50: #ECFDF5;
+  --medical-secondary-100: #D1FAE5;
+  --medical-secondary-200: #A7F3D0;
+  --medical-secondary-300: #6EE7B7;
+  --medical-secondary-400: #34D399;
+  --medical-secondary-500: #10B981;
+  --medical-secondary-600: #059669;
+  --medical-secondary-700: #047857;
+  --medical-secondary-800: #065F46;
+  --medical-secondary-900: #064E3B;
+  
+  /* 功能色 - 现代化调色板 */
+  --medical-success: #10B981;
+  --medical-success-light: #34D399;
+  --medical-success-dark: #047857;
+  --medical-warning: #F59E0B;
+  --medical-warning-light: #FBBF24;
+  --medical-warning-dark: #D97706;
+  --medical-error: #EF4444;
+  --medical-error-light: #F87171;
+  --medical-error-dark: #DC2626;
+  --medical-info: #3B82F6;
+  --medical-info-light: #60A5FA;
+  --medical-info-dark: #2563EB;
+  
+  /* 中性色 */
+  --medical-gray-50: #F8FAFC;
+  --medical-gray-100: #F1F5F9;
+  --medical-gray-200: #E2E8F0;
+  --medical-gray-300: #CBD5E1;
+  --medical-gray-400: #94A3B8;
+  --medical-gray-500: #64748B;
+  --medical-gray-600: #475569;
+  --medical-gray-700: #334155;
+  --medical-gray-800: #1E293B;
+  --medical-gray-900: #0F172A;
+  
+  /* 文本颜色 - 增强对比度 */
+  --text-primary: #0F172A;
+  --text-secondary: #334155;
+  --text-muted: #64748B;
+  --text-inverse: #FFFFFF;
+  --medical-text-primary: #0F172A;
+  --medical-text-secondary: #334155;
+  --medical-text-primary-dark: #F8FAFC;
+  --medical-text-secondary-dark: #CBD5E1;
+  
+  /* 背景色 */
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F8FAFC;
+  --bg-tertiary: #F1F5F9;
+  --bg-accent: #E6F2FF;
+  
+  /* 边框和分割线 */
+  --border-light: #E2E8F0;
+  --border-medium: #CBD5E1;
+  --border-dark: #94A3B8;
+  
+  /* 阴影 */
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  
+  /* 圆角 */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  
+  /* 过渡动画 */
+  --transition-fast: 150ms ease-in-out;
+  --transition-normal: 250ms ease-in-out;
+  --transition-slow: 350ms ease-in-out;
+}
+
+/* Landing页面动画 */
+@keyframes blob {
+  0% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  33% {
+    transform: translate(30px, -50px) scale(1.1);
+  }
+  66% {
+    transform: translate(-20px, 20px) scale(0.9);
+  }
+  100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-20px) rotate(180deg);
+  }
+}
+
+@keyframes tilt {
+  0%, 50%, 100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(1deg);
+  }
+  75% {
+    transform: rotate(-1deg);
+  }
+}
+
+@keyframes gradient-x {
+  0%, 100% {
+    background-size: 200% 200%;
+    background-position: left center;
+  }
+  50% {
+    background-size: 200% 200%;
+    background-position: right center;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: calc(200px + 100%) 0;
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 15px rgba(59, 130, 246, 0);
+  }
+}
+
+@keyframes medical-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+  }
+}
+
+@keyframes data-flow {
+  0% {
+    transform: translateX(-100%) rotate(0deg);
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(100%) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+@keyframes health-monitor {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  25% {
+    transform: translateY(-5px) scale(1.02);
+  }
+  75% {
+    transform: translateY(5px) scale(0.98);
+  }
+}
+
+@keyframes heartbeat {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes slideInUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInScale {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* 医疗主题通用组件样式 - 现代化升级 */
+.medical-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-normal);
+  overflow: hidden;
+}
+
+.medical-card:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-4px) scale(1.02);
+  border-color: var(--medical-primary-300);
+}
+
+.medical-card-header {
+  padding: 1.5rem;
+  border-bottom: 1px solid var(--border-light);
+  background: linear-gradient(135deg, var(--medical-primary-50) 0%, var(--bg-primary) 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.medical-card-header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  transition: left 0.5s;
+}
+
+.medical-card:hover .medical-card-header::before {
+  left: 100%;
+}
+
+.medical-card-body {
+  padding: 1.5rem;
+}
+
+.medical-card-footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+}
+
+.medical-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.medical-btn::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: width 0.3s, height 0.3s;
+}
+
+.medical-btn:hover::before {
+  width: 300px;
+  height: 300px;
+}
+
+.medical-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.medical-btn-primary {
+  background: linear-gradient(135deg, var(--medical-primary-600) 0%, var(--medical-primary-700) 100%);
+  color: var(--text-inverse);
+  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+  border: 1px solid var(--medical-primary-500);
+}
+
+.medical-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--medical-primary-500) 0%, var(--medical-primary-600) 100%);
+  box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
+  transform: translateY(-2px);
+  border-color: var(--medical-primary-400);
+}
+
+.medical-btn-secondary {
+  background: var(--bg-primary);
+  color: var(--medical-primary);
+  border: 1px solid var(--medical-primary);
+}
+
+.medical-btn-secondary:hover:not(:disabled) {
+  background: var(--medical-primary-50);
+  transform: translateY(-1px);
+}
+
+.medical-btn-success {
+  background: linear-gradient(135deg, var(--medical-success) 0%, var(--medical-secondary-dark) 100%);
+  color: var(--text-inverse);
+}
+
+.medical-btn-warning {
+  background: linear-gradient(135deg, var(--medical-warning) 0%, #E67E00 100%);
+  color: var(--text-inverse);
+}
+
+.medical-btn-error {
+  background: linear-gradient(135deg, var(--medical-error) 0%, #CC0000 100%);
+  color: var(--text-inverse);
+}
+
+.medical-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transition: all var(--transition-fast);
+}
+
+.medical-input:focus {
+  outline: none;
+  border-color: var(--medical-primary);
+  box-shadow: 0 0 0 3px var(--medical-primary-50);
+}
+
+.medical-input:invalid {
+  border-color: var(--medical-error);
+}
+
+.medical-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: var(--radius-xl);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+}
+
+.medical-badge-primary {
+  background: var(--medical-primary-100);
+  color: var(--medical-primary-dark);
+}
+
+.medical-badge-success {
+  background: #D4EDDA;
+  color: var(--medical-secondary-dark);
+}
+
+.medical-badge-warning {
+  background: #FFF3CD;
+  color: #856404;
+}
+
+.medical-badge-error {
+  background: #F8D7DA;
+  color: #721C24;
+}
+
+.medical-alert {
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  border-left: 4px solid;
+  margin: 1rem 0;
+}
+
+.medical-alert-info {
+  background: var(--medical-primary-50);
+  border-left-color: var(--medical-info);
+  color: var(--medical-primary-dark);
+}
+
+.medical-alert-success {
+  background: #D4EDDA;
+  border-left-color: var(--medical-success);
+  color: var(--medical-secondary-dark);
+}
+
+.medical-alert-warning {
+  background: #FFF3CD;
+  border-left-color: var(--medical-warning);
+  color: #856404;
+}
+
+.medical-alert-error {
+  background: #F8D7DA;
+  border-left-color: var(--medical-error);
+  color: #721C24;
+}
+
+.medical-loading {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--border-light);
+  border-radius: 50%;
+  border-top-color: var(--medical-primary);
+  animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.medical-progress {
+  width: 100%;
+  height: 0.5rem;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+}
+
+.medical-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--medical-primary) 0%, var(--medical-primary-light) 100%);
+  border-radius: var(--radius-xl);
+  transition: width var(--transition-normal);
+}
+
+.medical-tooltip {
+  position: relative;
+  display: inline-block;
+}
+
+.medical-tooltip:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.5rem;
+  background: var(--medical-gray-800);
+  color: var(--text-inverse);
+  font-size: 0.75rem;
+  border-radius: var(--radius-md);
+  white-space: nowrap;
+  z-index: 1000;
+  animation: fadeInScale 0.2s ease-out;
+}
+
+/* 医疗图标样式 */
+.medical-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-lg);
+  background: var(--medical-primary-50);
+  color: var(--medical-primary);
+  font-size: 1.25rem;
+}
+
+.medical-icon-sm {
+  width: 2rem;
+  height: 2rem;
+  font-size: 1rem;
+}
+
+.medical-icon-lg {
+  width: 3rem;
+  height: 3rem;
+  font-size: 1.5rem;
+}
+
+/* 响应式网格 */
+.medical-grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.medical-grid-1 {
+  grid-template-columns: 1fr;
+}
+
+.medical-grid-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.medical-grid-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.medical-grid-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 768px) {
+  .medical-grid-2,
+  .medical-grid-3,
+  .medical-grid-4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .medical-grid-3,
+  .medical-grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* 动画效果 - 现代化医疗主题 */
+.animate-slide-up {
+  animation: slideInUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-fade-scale {
+  animation: fadeInScale 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-heartbeat {
+  animation: heartbeat 2s ease-in-out infinite;
+}
+
+.animate-medical-pulse {
+  animation: medical-pulse 2s ease-in-out infinite;
+}
+
+.animate-data-flow {
+  animation: data-flow 3s linear infinite;
+}
+
+.animate-health-monitor {
+  animation: health-monitor 4s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s infinite;
+}
+
+/* 暗色主题支持 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-primary: #1E293B;
+    --bg-secondary: #334155;
+    --bg-tertiary: #475569;
+    --bg-accent: #1E3A8A;
+    --text-primary: #F1F5F9;
+    --text-secondary: #CBD5E1;
+    --text-muted: #94A3B8;
+    --border-light: #475569;
+    --border-medium: #64748B;
+    --border-dark: #94A3B8;
+  }
+}
+
+@keyframes pulse-glow-continue {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(59, 130, 246, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.8);
+  }
+}
+
+/* 医疗信息框样式 */
+.medical-info-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, var(--medical-primary-50) 0%, var(--bg-primary) 100%);
+  border: 1px solid var(--medical-primary-100);
+  border-radius: var(--radius-lg);
+  margin: 1rem 0;
+}
+
+/* 医疗徽章尺寸变体 */
+.medical-badge-xs {
+  padding: 0.125rem 0.5rem;
+  font-size: 0.625rem;
+  line-height: 0.75rem;
+}
+
+/* 医疗图标尺寸变体 */
+.medical-icon-xs {
+  width: 1.5rem;
+  height: 1.5rem;
+  font-size: 0.75rem;
+}
+
+/* Flex 工具类 */
+.flex {
+  display: flex;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.items-start {
+  align-items: flex-start;
+}
+
+.justify-center {
+  justify-content: center;
+}
+
+.justify-between {
+  justify-content: space-between;
+}
+
+.gap-1 {
+  gap: 0.25rem;
+}
+
+.gap-2 {
+  gap: 0.5rem;
+}
+
+.gap-3 {
+  gap: 0.75rem;
+}
+
+.gap-4 {
+  gap: 1rem;
+}
+
+/* 文本工具类 */
+.text-xs {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.text-sm {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.text-lg {
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+}
+
+.text-xl {
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+}
+
+.text-2xl {
+  font-size: 1.5rem;
+  line-height: 2rem;
+}
+
+.text-3xl {
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+}
+
+.font-medium {
+  font-weight: 500;
+}
+
+.font-semibold {
+  font-weight: 600;
+}
+
+.font-bold {
+  font-weight: 700;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.text-right {
+  text-align: right;
+}
+
+/* 间距工具类 */
+.mt-1 {
+  margin-top: 0.25rem;
+}
+
+.mt-2 {
+  margin-top: 0.5rem;
+}
+
+.mt-4 {
+  margin-top: 1rem;
+}
+
+.mt-6 {
+  margin-top: 1.5rem;
+}
+
+.mb-1 {
+  margin-bottom: 0.25rem;
+}
+
+.mb-2 {
+  margin-bottom: 0.5rem;
+}
+
+.mb-3 {
+  margin-bottom: 0.75rem;
+}
+
+.mb-4 {
+  margin-bottom: 1rem;
+}
+
+.mb-8 {
+  margin-bottom: 2rem;
+}
+
+.mx-auto {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.py-8 {
+  padding-top: 2rem;
+  padding-bottom: 2rem;
+}
+
+.p-3 {
+  padding: 0.75rem;
+}
+
+/* 宽度工具类 */
+.w-full {
+  width: 100%;
+}
+
+.h-3 {
+  height: 0.75rem;
+}
+
+.h-4 {
+  height: 1rem;
+}
+
+.h-5 {
+  height: 1.25rem;
+}
+
+.h-8 {
+  height: 2rem;
+}
+
+.w-3 {
+  width: 0.75rem;
+}
+
+.w-4 {
+  width: 1rem;
+}
+
+.w-5 {
+  width: 1.25rem;
+}
+
+.w-8 {
+  width: 2rem;
+}
+
+/* 颜色工具类 */
+.text-white {
+  color: #ffffff;
+}
+
+.text-gray-400 {
+  color: #9CA3AF;
+}
+
+.text-gray-500 {
+  color: #6B7280;
+}
+
+.text-gray-600 {
+  color: #4B5563;
+}
+
+.text-gray-800 {
+  color: #1F2937;
+}
+
+.text-gray-900 {
+  color: #111827;
+}
+
+.text-blue-600 {
+  color: #2563EB;
+}
+
+.text-green-600 {
+  color: #059669;
+}
+
+.text-yellow-600 {
+  color: #D97706;
+}
+
+.text-red-600 {
+  color: #DC2626;
+}
+
+.text-purple-600 {
+  color: #9333EA;
+}
+
+.text-orange-600 {
+  color: #EA580C;
+}
+
+.text-emerald-600 {
+  color: #059669;
+}
+
+.text-cyan-600 {
+  color: #0891B2;
+}
+
+.text-indigo-600 {
+  color: #4F46E5;
+}
+
+.text-pink-600 {
+  color: #DB2777;
+}
+
+.text-amber-600 {
+  color: #D97706;
+}
+
+/* 背景颜色工具类 */
+.bg-white {
+  background-color: #ffffff;
+}
+
+.bg-gray-400 {
+  background-color: #9CA3AF;
+}
+
+.bg-blue-500 {
+  background-color: #3B82F6;
+}
+
+.bg-green-500 {
+  background-color: #10B981;
+}
+
+.bg-yellow-500 {
+  background-color: #F59E0B;
+}
+
+.bg-red-500 {
+  background-color: #EF4444;
+}
+
+.bg-purple-500 {
+  background-color: #8B5CF6;
+}
+
+.bg-orange-500 {
+  background-color: #F97316;
+}
+
+.bg-emerald-500 {
+  background-color: #10B981;
+}
+
+.bg-cyan-500 {
+  background-color: #06B6D4;
+}
+
+.bg-indigo-500 {
+  background-color: #6366F1;
+}
+
+.bg-pink-500 {
+  background-color: #EC4899;
+}
+
+.bg-amber-500 {
+  background-color: #F59E0B;
+}
+
+.bg-blue-600 {
+  background-color: #2563EB;
+}
+
+.bg-green-600 {
+  background-color: #059669;
+}
+
+/* 其他工具类 */
+.space-y-6 > * + * {
+  margin-top: 1.5rem;
+}
+
+.space-y-1 > * + * {
+  margin-top: 0.25rem;
+}
+
+.rounded-lg {
+  border-radius: var(--radius-lg);
+}
+
+.border {
+  border-width: 1px;
+}
+
+.border-blue-200 {
+  border-color: #DBEAFE;
+}
+
+.border-green-200 {
+  border-color: #DCFCE7;
+}
+
+.border-yellow-200 {
+  border-color: #FEF3C7;
+}
+
+.border-purple-200 {
+  border-color: #E9D5FF;
+}
+
+.border-orange-200 {
+  border-color: #FED7AA;
+}
+
+.border-emerald-200 {
+  border-color: #A7F3D0;
+}
+
+.border-cyan-200 {
+  border-color: #A5F3FC;
+}
+
+.border-indigo-200 {
+  border-color: #C7D2FE;
+}
+
+.border-pink-200 {
+  border-color: #FBCFE8;
+}
+
+.border-amber-200 {
+  border-color: #FDE68A;
+}
+
+/* 渐变背景 */
+.bg-gradient-to-br {
+  background-image: linear-gradient(to bottom right, var(--tw-gradient-stops));
+}
+
+.from-blue-50 {
+  --tw-gradient-from: #EFF6FF;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(239, 246, 255, 0));
+}
+
+.to-blue-100 {
+  --tw-gradient-to: #DBEAFE;
+}
+
+.from-green-50 {
+  --tw-gradient-from: #F0FDF4;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(240, 253, 244, 0));
+}
+
+.to-green-100 {
+  --tw-gradient-to: #DCFCE7;
+}
+
+.from-purple-50 {
+  --tw-gradient-from: #FAF5FF;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(250, 245, 255, 0));
+}
+
+.to-purple-100 {
+  --tw-gradient-to: #F3E8FF;
+}
+
+.from-orange-50 {
+  --tw-gradient-from: #FFF7ED;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(255, 247, 237, 0));
+}
+
+.to-orange-100 {
+  --tw-gradient-to: #FFEDD5;
+}
+
+.from-emerald-50 {
+  --tw-gradient-from: #ECFDF5;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(236, 253, 245, 0));
+}
+
+.to-emerald-100 {
+  --tw-gradient-to: #D1FAE5;
+}
+
+.from-cyan-50 {
+  --tw-gradient-from: #ECFEFF;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(236, 254, 255, 0));
+}
+
+.to-cyan-100 {
+  --tw-gradient-to: #CFFAFE;
+}
+
+.from-indigo-50 {
+  --tw-gradient-from: #EEF2FF;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(238, 242, 255, 0));
+}
+
+.to-indigo-100 {
+  --tw-gradient-to: #E0E7FF;
+}
+
+.from-pink-50 {
+  --tw-gradient-from: #FDF2F8;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(253, 242, 248, 0));
+}
+
+.to-pink-100 {
+  --tw-gradient-to: #FCE7F3;
+}
+
+.from-amber-50 {
+  --tw-gradient-from: #FFFBEB;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(255, 251, 235, 0));
+}
+
+.to-amber-100 {
+  --tw-gradient-to: #FEF3C7;
+}
+
+.bg-white\/50 {
+  background-color: rgba(255, 255, 255, 0.5);
+}
+
+.bg-white\/95 {
+  background-color: rgba(255, 255, 255, 0.95);
+}
+
+/* 医疗导航样式 */
+.medical-nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-lg);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all var(--transition-fast);
+  position: relative;
+  overflow: hidden;
+}
+
+.medical-nav-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s;
+}
+
+.medical-nav-item:hover::before {
+  left: 100%;
+}
+
+.medical-nav-item-active {
+  background: linear-gradient(135deg, var(--medical-primary) 0%, var(--medical-primary-dark) 100%);
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.medical-nav-item-active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--medical-secondary) 0%, var(--medical-primary-light) 100%);
+  border-radius: 1px;
+}
+
+.medical-nav-item-inactive {
+  color: var(--text-secondary);
+  background: transparent;
+}
+
+.medical-nav-item-inactive:hover {
+  background: var(--medical-primary-50);
+  color: var(--medical-primary);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 移动端导航样式 */
+@media (max-width: 768px) {
+  .medical-nav-item {
+    width: 100%;
+    justify-content: flex-start;
+    padding: 1rem;
+    border-radius: var(--radius-md);
+    margin-bottom: 0.25rem;
+  }
+  
+  .medical-nav-item-active {
+    background: linear-gradient(135deg, var(--medical-primary-50) 0%, var(--medical-primary-100) 100%);
+    color: var(--medical-primary-dark);
+    border-left: 4px solid var(--medical-primary);
+  }
+}
+
+@keyframes bounce-in {
+  0% {
+    transform: scale(0.3) rotate(-10deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.05) rotate(5deg);
+  }
+  70% {
+    transform: scale(0.9) rotate(-2deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  0% {
+    transform: translateY(50px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes float-delayed {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-15px) rotate(90deg);
+  }
+}
+
+@keyframes spin-slow {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-blob {
+  animation: blob 7s infinite;
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-tilt {
+  animation: tilt 10s infinite linear;
+}
+
+.animate-gradient-x {
+  animation: gradient-x 3s ease infinite;
+  background-size: 200% 200%;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  background-size: 200px 100%;
+  background-repeat: no-repeat;
+  animation: shimmer 2s infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s infinite;
+}
+
+.animate-bounce-in {
+  animation: bounce-in 0.6s ease-out;
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.4s ease-out;
+}
+
+.animate-float-delayed {
+  animation: float-delayed 8s ease-in-out infinite;
+  animation-delay: 1s;
+}
+
+.animate-spin-slow {
+  animation: spin-slow 8s linear infinite;
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+
+.animation-delay-4000 {
+  animation-delay: 4s;
+}
+
+.animation-delay-6000 {
+  animation-delay: 6s;
+}
+
+/* 容器和布局 */
+.app-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-content {
+  flex: 1;
+  padding: 2rem 1rem;
+}
+
+.form-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem;
+  background: white;
+  border-radius: 12px;
+  box-shadow: var(--shadow-medium);
+  border: 1px solid var(--border-color);
+}
+
+/* 卡片组件 */
+.medical-card {
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: var(--shadow-light);
+  border: 1px solid var(--border-color);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.medical-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #007BFF, #6f42c1, #e83e8c);
+  transform: scaleX(0);
+  transition: transform 0.3s ease;
+}
+
+.medical-card:hover {
+  box-shadow: var(--shadow-medium);
+  transform: translateY(-2px);
+}
+
+.medical-card:hover::before {
+  transform: scaleX(1);
+}
+
+/* 玻璃态效果 */
+.glass-effect {
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+}
+
+.glass-effect-dark {
+  background: rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+/* 按钮样式 */
+.btn-medical {
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 500;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.3s ease;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-medical::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: left 0.5s;
+}
+
+.btn-medical:hover::before {
+  left: 100%;
+}
+
+.btn-medical-primary {
+  background-color: var(--medical-blue);
+  color: white;
+}
+
+.btn-medical-primary:hover {
+  background-color: var(--medical-blue-dark);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-medium);
+}
+
+.btn-medical-success {
+  background-color: var(--medical-success);
+  color: white;
+}
+
+.btn-medical-success:hover {
+  background-color: #218838;
+  transform: translateY(-1px);
+}
+
+.btn-primary:hover {
+  background-color: #0056b3 !important;
+}
+
+.btn-success:hover {
+  background-color: #218838 !important;
+}
+
+/* 表单样式 */
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.form-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+  background: white;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--medical-blue);
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+.form-textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+/* 消息样式 */
+.alert-medical {
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  margin: 1rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+}
+
+.alert-success {
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.alert-error {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+/* 表格样式 */
+.table-container {
+  margin-top: 2rem;
+  overflow-x: auto;
+  background: white;
+  border-radius: 12px;
+  box-shadow: var(--shadow-light);
+  border: 1px solid var(--border-color);
+}
+
+.medical-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.medical-table th {
+  background-color: var(--medical-light);
+  color: var(--text-primary);
+  font-weight: 600;
+  padding: 1rem;
+  text-align: left;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.medical-table td {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.medical-table tbody tr:hover {
+  background-color: #f8f9fa;
+}
+
+.medical-table tbody tr:nth-child(even) {
+  background-color: #fafbfc;
+}
+
+/* 加载动画 */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  gap: 1rem;
+}
+
+.loading-text {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* 导航栏样式 */
+.navbar-medical {
+  background: linear-gradient(135deg, var(--medical-blue) 0%, #0056b3 100%);
+  box-shadow: var(--shadow-medium);
+  padding: 1rem 0;
+}
+
+.navbar-brand {
+  font-weight: 700;
+  font-size: 1.5rem;
+  color: white !important;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.navbar-nav .nav-link {
+  color: rgba(255, 255, 255, 0.9) !important;
+  font-weight: 500;
+  padding: 0.5rem 1rem !important;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+}
+
+.navbar-nav .nav-link:hover {
+  color: white !important;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.navbar-nav .nav-link.active {
+  color: white !important;
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* 页脚样式 */
+.footer-medical {
+  background-color: #f8f9fa;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 2rem 1rem;
+  border-top: 1px solid var(--border-color);
+  margin-top: auto;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .main-content {
+    padding: 1rem 0.5rem;
+  }
+  
+  .form-container {
+    padding: 1.5rem;
+    margin: 0 1rem;
+  }
+  
+  .medical-card {
+    padding: 1.5rem;
+    margin: 0 1rem;
+  }
+  
+  .btn-medical {
+    padding: 0.625rem 1.25rem;
+    font-size: 0.9rem;
+  }
+  
+  .medical-table th,
+  .medical-table td {
+    padding: 0.75rem 0.5rem;
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .form-container {
+    padding: 1rem;
+  }
+  
+  .medical-card {
+    padding: 1rem;
+  }
+  
+  .btn-medical {
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+  }
+}
+
+/* 动画效果 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.6s ease-out;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--medical-blue);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--medical-blue-dark);
+}

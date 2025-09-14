@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EMR Blockchain Performance Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .metric-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .metric-card h3 {
+            color: #666;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+        }
+
+        .metric-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .metric-unit {
+            color: #888;
+            font-size: 0.9em;
+        }
+
+        .metric-trend {
+            display: flex;
+            align-items: center;
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
+
+        .trend-up {
+            color: #4CAF50;
+        }
+
+        .trend-down {
+            color: #f44336;
+        }
+
+        .trend-stable {
+            color: #FF9800;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .chart-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .chart-card h3 {
+            margin-bottom: 20px;
+            color: #333;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-healthy {
+            background-color: #4CAF50;
+        }
+
+        .status-warning {
+            background-color: #FF9800;
+        }
+
+        .status-critical {
+            background-color: #f44336;
+        }
+
+        .test-controls {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .test-controls h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .control-group {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .control-group label {
+            min-width: 120px;
+            font-weight: 500;
+        }
+
+        .control-group input, .control-group select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background-color 0.3s ease;
+        }
+
+        .btn-primary {
+            background-color: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #5a6fd8;
+        }
+
+        .btn-danger {
+            background-color: #f44336;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background-color: #d32f2f;
+        }
+
+        .btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .test-status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: 500;
+        }
+
+        .test-status.running {
+            background-color: #e3f2fd;
+            color: #1976d2;
+            border: 1px solid #bbdefb;
+        }
+
+        .test-status.completed {
+            background-color: #e8f5e8;
+            color: #388e3c;
+            border: 1px solid #c8e6c9;
+        }
+
+        .test-status.failed {
+            background-color: #ffebee;
+            color: #d32f2f;
+            border: 1px solid #ffcdd2;
+        }
+
+        .log-container {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            margin-top: 20px;
+        }
+
+        .log-content {
+            background: #1e1e1e;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        @media (max-width: 768px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .control-group {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .control-group label {
+                min-width: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>EMR Blockchain Performance Dashboard</h1>
+        <p>Real-time monitoring and load testing for 1000+ TPS verification</p>
+    </div>
+
+    <div class="container">
+        <!-- Key Metrics -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <h3>Current TPS</h3>
+                <div class="metric-value" id="current-tps">0</div>
+                <div class="metric-unit">transactions/second</div>
+                <div class="metric-trend" id="tps-trend">
+                    <span class="status-indicator status-healthy"></span>
+                    <span>Stable</span>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <h3>Average Latency</h3>
+                <div class="metric-value" id="avg-latency">0</div>
+                <div class="metric-unit">milliseconds</div>
+                <div class="metric-trend" id="latency-trend">
+                    <span class="status-indicator status-healthy"></span>
+                    <span>Normal</span>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <h3>Error Rate</h3>
+                <div class="metric-value" id="error-rate">0</div>
+                <div class="metric-unit">percent</div>
+                <div class="metric-trend" id="error-trend">
+                    <span class="status-indicator status-healthy"></span>
+                    <span>Low</span>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <h3>Active Users</h3>
+                <div class="metric-value" id="active-users">0</div>
+                <div class="metric-unit">concurrent</div>
+                <div class="metric-trend" id="users-trend">
+                    <span class="status-indicator status-healthy"></span>
+                    <span>Ready</span>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <h3>System Health</h3>
+                <div class="metric-value" id="system-health">100</div>
+                <div class="metric-unit">percent</div>
+                <div class="metric-trend" id="health-trend">
+                    <span class="status-indicator status-healthy"></span>
+                    <span>Healthy</span>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <h3>Target Achievement</h3>
+                <div class="metric-value" id="target-achievement">0</div>
+                <div class="metric-unit">percent of 1000 TPS</div>
+                <div class="metric-trend" id="target-trend">
+                    <span class="status-indicator status-warning"></span>
+                    <span>Not Started</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Test Controls -->
+        <div class="test-controls">
+            <h3>Load Test Controls</h3>
+            <div class="control-group">
+                <label>Test Duration:</label>
+                <input type="number" id="test-duration" value="300" min="60" max="3600">
+                <span>seconds</span>
+            </div>
+            <div class="control-group">
+                <label>Concurrent Users:</label>
+                <input type="number" id="concurrent-users" value="100" min="1" max="1000">
+                <span>users</span>
+            </div>
+            <div class="control-group">
+                <label>Target TPS:</label>
+                <input type="number" id="target-tps" value="1000" min="1" max="5000">
+                <span>transactions/second</span>
+            </div>
+            <div class="control-group">
+                <label>Test Type:</label>
+                <select id="test-type">
+                    <option value="load">Load Test</option>
+                    <option value="stress">Stress Test</option>
+                    <option value="endurance">Endurance Test</option>
+                    <option value="mixed">Mixed Workload</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <button class="btn btn-primary" id="start-test">Start Test</button>
+                <button class="btn btn-danger" id="stop-test" disabled>Stop Test</button>
+                <button class="btn" id="reset-metrics">Reset Metrics</button>
+            </div>
+            <div class="test-status" id="test-status" style="display: none;"></div>
+        </div>
+
+        <!-- Performance Charts -->
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h3>Transactions Per Second Over Time</h3>
+                <div class="chart-container">
+                    <canvas id="tps-chart"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h3>Response Time Distribution</h3>
+                <div class="chart-container">
+                    <canvas id="latency-chart"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h3>System Resource Usage</h3>
+                <div class="chart-container">
+                    <canvas id="resource-chart"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h3>Error Rate Trends</h3>
+                <div class="chart-container">
+                    <canvas id="error-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Test Logs -->
+        <div class="log-container">
+            <h3>Test Execution Logs</h3>
+            <div class="log-content" id="test-logs">
+Performance dashboard initialized.
+Waiting for test execution...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Dashboard state
+        let testRunning = false;
+        let testStartTime = null;
+        let metricsInterval = null;
+        let charts = {};
+
+        // Initialize charts
+        function initializeCharts() {
+            // TPS Chart
+            const tpsCtx = document.getElementById('tps-chart').getContext('2d');
+            charts.tps = new Chart(tpsCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'TPS',
+                        data: [],
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }, {
+                        label: 'Target TPS',
+                        data: [],
+                        borderColor: '#f44336',
+                        borderDash: [5, 5],
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Transactions/Second'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Time'
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Latency Chart
+            const latencyCtx = document.getElementById('latency-chart').getContext('2d');
+            charts.latency = new Chart(latencyCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Average',
+                        data: [],
+                        borderColor: '#4CAF50',
+                        fill: false
+                    }, {
+                        label: 'P95',
+                        data: [],
+                        borderColor: '#FF9800',
+                        fill: false
+                    }, {
+                        label: 'P99',
+                        data: [],
+                        borderColor: '#f44336',
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Response Time (ms)'
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Resource Chart
+            const resourceCtx = document.getElementById('resource-chart').getContext('2d');
+            charts.resource = new Chart(resourceCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'CPU %',
+                        data: [],
+                        borderColor: '#667eea',
+                        fill: false
+                    }, {
+                        label: 'Memory %',
+                        data: [],
+                        borderColor: '#4CAF50',
+                        fill: false
+                    }, {
+                        label: 'Disk I/O',
+                        data: [],
+                        borderColor: '#FF9800',
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            title: {
+                                display: true,
+                                text: 'Usage %'
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Error Chart
+            const errorCtx = document.getElementById('error-chart').getContext('2d');
+            charts.error = new Chart(errorCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Error Rate %',
+                        data: [],
+                        backgroundColor: 'rgba(244, 67, 54, 0.6)',
+                        borderColor: '#f44336',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            title: {
+                                display: true,
+                                text: 'Error Rate %'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Update metrics display
+        function updateMetrics(data) {
+            document.getElementById('current-tps').textContent = data.tps || 0;
+            document.getElementById('avg-latency').textContent = data.avgLatency || 0;
+            document.getElementById('error-rate').textContent = data.errorRate || 0;
+            document.getElementById('active-users').textContent = data.activeUsers || 0;
+            document.getElementById('system-health').textContent = data.systemHealth || 100;
+            
+            const targetTps = parseInt(document.getElementById('target-tps').value);
+            const achievement = targetTps > 0 ? Math.round((data.tps / targetTps) * 100) : 0;
+            document.getElementById('target-achievement').textContent = achievement;
+
+            // Update trends
+            updateTrend('tps-trend', data.tps, targetTps);
+            updateTrend('latency-trend', data.avgLatency, 1000, true);
+            updateTrend('error-trend', data.errorRate, 5, true);
+        }
+
+        function updateTrend(elementId, value, threshold, reverse = false) {
+            const element = document.getElementById(elementId);
+            const indicator = element.querySelector('.status-indicator');
+            const text = element.querySelector('span:last-child');
+
+            let status, message;
+            if (reverse) {
+                if (value < threshold * 0.5) {
+                    status = 'healthy';
+                    message = 'Good';
+                } else if (value < threshold) {
+                    status = 'warning';
+                    message = 'Moderate';
+                } else {
+                    status = 'critical';
+                    message = 'High';
+                }
+            } else {
+                if (value >= threshold) {
+                    status = 'healthy';
+                    message = 'Target Met';
+                } else if (value >= threshold * 0.8) {
+                    status = 'warning';
+                    message = 'Close';
+                } else {
+                    status = 'critical';
+                    message = 'Below Target';
+                }
+            }
+
+            indicator.className = `status-indicator status-${status}`;
+            text.textContent = message;
+        }
+
+        // Add log entry
+        function addLog(message) {
+            const logContainer = document.getElementById('test-logs');
+            const timestamp = new Date().toLocaleTimeString();
+            logContainer.textContent += `\n[${timestamp}] ${message}`;
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        // Start test
+        async function startTest() {
+            const duration = parseInt(document.getElementById('test-duration').value);
+            const users = parseInt(document.getElementById('concurrent-users').value);
+            const targetTps = parseInt(document.getElementById('target-tps').value);
+            const testType = document.getElementById('test-type').value;
+
+            testRunning = true;
+            testStartTime = Date.now();
+
+            document.getElementById('start-test').disabled = true;
+            document.getElementById('stop-test').disabled = false;
+
+            const statusElement = document.getElementById('test-status');
+            statusElement.className = 'test-status running';
+            statusElement.style.display = 'block';
+            statusElement.textContent = `Running ${testType} test with ${users} users for ${duration} seconds...`;
+
+            addLog(`Starting ${testType} test: ${users} users, ${duration}s duration, target ${targetTps} TPS`);
+
+            // Start metrics collection
+            metricsInterval = setInterval(collectMetrics, 1000);
+
+            try {
+                // Simulate test execution (replace with actual API call)
+                await simulateTest(duration, users, targetTps, testType);
+                
+                statusElement.className = 'test-status completed';
+                statusElement.textContent = 'Test completed successfully!';
+                addLog('Test completed successfully');
+            } catch (error) {
+                statusElement.className = 'test-status failed';
+                statusElement.textContent = `Test failed: ${error.message}`;
+                addLog(`Test failed: ${error.message}`);
+            } finally {
+                testRunning = false;
+                document.getElementById('start-test').disabled = false;
+                document.getElementById('stop-test').disabled = true;
+                
+                if (metricsInterval) {
+                    clearInterval(metricsInterval);
+                    metricsInterval = null;
+                }
+            }
+        }
+
+        // Stop test
+        function stopTest() {
+            testRunning = false;
+            addLog('Test stopped by user');
+            
+            const statusElement = document.getElementById('test-status');
+            statusElement.className = 'test-status failed';
+            statusElement.textContent = 'Test stopped by user';
+            
+            document.getElementById('start-test').disabled = false;
+            document.getElementById('stop-test').disabled = true;
+            
+            if (metricsInterval) {
+                clearInterval(metricsInterval);
+                metricsInterval = null;
+            }
+        }
+
+        // Simulate test execution (replace with actual implementation)
+        async function simulateTest(duration, users, targetTps, testType) {
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    resolve();
+                }, duration * 1000);
+            });
+        }
+
+        // Collect metrics
+        async function collectMetrics() {
+            if (!testRunning) return;
+
+            try {
+                // Simulate metrics collection (replace with actual API calls)
+                const metrics = {
+                    tps: Math.random() * 1200 + 800,
+                    avgLatency: Math.random() * 500 + 100,
+                    errorRate: Math.random() * 5,
+                    activeUsers: parseInt(document.getElementById('concurrent-users').value),
+                    systemHealth: 95 + Math.random() * 5
+                };
+
+                updateMetrics(metrics);
+                updateCharts(metrics);
+            } catch (error) {
+                addLog(`Error collecting metrics: ${error.message}`);
+            }
+        }
+
+        // Update charts with new data
+        function updateCharts(metrics) {
+            const now = new Date().toLocaleTimeString();
+            const maxDataPoints = 50;
+
+            // Update TPS chart
+            charts.tps.data.labels.push(now);
+            charts.tps.data.datasets[0].data.push(metrics.tps);
+            charts.tps.data.datasets[1].data.push(parseInt(document.getElementById('target-tps').value));
+
+            if (charts.tps.data.labels.length > maxDataPoints) {
+                charts.tps.data.labels.shift();
+                charts.tps.data.datasets[0].data.shift();
+                charts.tps.data.datasets[1].data.shift();
+            }
+            charts.tps.update('none');
+
+            // Update other charts similarly...
+            // (Implementation would continue for other charts)
+        }
+
+        // Reset metrics
+        function resetMetrics() {
+            Object.values(charts).forEach(chart => {
+                chart.data.labels = [];
+                chart.data.datasets.forEach(dataset => {
+                    dataset.data = [];
+                });
+                chart.update();
+            });
+
+            updateMetrics({
+                tps: 0,
+                avgLatency: 0,
+                errorRate: 0,
+                activeUsers: 0,
+                systemHealth: 100
+            });
+
+            document.getElementById('test-logs').textContent = 'Performance dashboard reset.\nWaiting for test execution...';
+            
+            const statusElement = document.getElementById('test-status');
+            statusElement.style.display = 'none';
+
+            addLog('Metrics reset');
+        }
+
+        // Event listeners
+        document.getElementById('start-test').addEventListener('click', startTest);
+        document.getElementById('stop-test').addEventListener('click', stopTest);
+        document.getElementById('reset-metrics').addEventListener('click', resetMetrics);
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeCharts();
+            addLog('Performance dashboard initialized');
+        });
+    </script>
+</body>
+</html>

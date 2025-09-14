@@ -1,0 +1,314 @@
+# Artillery Load Testing Configuration for Blockchain EMR System
+# Tests the system against 1000 TPS performance target
+
+config:
+  target: 'http://localhost:3000'
+  phases:
+    # Warm-up phase
+    - duration: 60
+      arrivalRate: 10
+      name: "Warm-up"
+    
+    # Gradual ramp-up to target TPS
+    - duration: 120
+      arrivalRate: 10
+      rampTo: 100
+      name: "Ramp-up to 100 TPS"
+    
+    - duration: 120
+      arrivalRate: 100
+      rampTo: 500
+      name: "Ramp-up to 500 TPS"
+    
+    - duration: 120
+      arrivalRate: 500
+      rampTo: 1000
+      name: "Ramp-up to 1000 TPS"
+    
+    # Sustained load at target TPS
+    - duration: 300
+      arrivalRate: 1000
+      name: "Sustained 1000 TPS"
+    
+    # Peak load testing
+    - duration: 60
+      arrivalRate: 1000
+      rampTo: 1500
+      name: "Peak load test"
+    
+    # Cool-down
+    - duration: 60
+      arrivalRate: 1500
+      rampTo: 10
+      name: "Cool-down"
+  
+  defaults:
+    headers:
+      'Content-Type': 'application/json'
+      'User-Agent': 'Artillery Load Test'
+  
+  # Performance thresholds
+  ensure:
+    maxErrorRate: 1  # Max 1% error rate
+    p95: 100         # 95th percentile response time < 100ms
+    p99: 200         # 99th percentile response time < 200ms
+  
+  # Plugins for enhanced reporting
+  plugins:
+    metrics-by-endpoint:
+      useOnlyRequestNames: true
+    publish-metrics:
+      - type: cloudwatch
+        region: us-east-1
+        namespace: BlockchainEMR/LoadTest
+      - type: prometheus
+        pushgateway: http://localhost:9091
+        prefix: artillery_
+  
+  # Custom variables
+  variables:
+    testUserId: "test-user-{{ $randomString() }}"
+    testPatientId: "patient-{{ $randomString() }}"
+    testRecordId: "record-{{ $randomString() }}"
+
+# Test scenarios
+scenarios:
+  # Authentication flow
+  - name: "Authentication Flow"
+    weight: 20
+    flow:
+      - post:
+          url: "/api/v1/auth/login"
+          name: "Login"
+          json:
+            email: "test{{ $randomInt(1, 1000) }}@example.com"
+            password: "testpassword123"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+          expect:
+            - statusCode: [200, 401]
+      
+      - get:
+          url: "/api/v1/auth/profile"
+          name: "Get Profile"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: [200, 401]
+
+  # Health check and monitoring
+  - name: "Health Checks"
+    weight: 10
+    flow:
+      - get:
+          url: "/api/v1/monitoring/health"
+          name: "Health Check"
+          expect:
+            - statusCode: 200
+            - hasProperty: "status"
+      
+      - get:
+          url: "/api/v1/monitoring/metrics"
+          name: "Metrics"
+          expect:
+            - statusCode: [200, 401]
+
+  # Medical records operations
+  - name: "Medical Records CRUD"
+    weight: 40
+    flow:
+      # Login first
+      - post:
+          url: "/api/v1/auth/login"
+          name: "Login for Records"
+          json:
+            email: "doctor{{ $randomInt(1, 100) }}@example.com"
+            password: "testpassword123"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+          expect:
+            - statusCode: [200, 401]
+      
+      # Create medical record
+      - post:
+          url: "/api/v1/records"
+          name: "Create Record"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          json:
+            patientId: "{{ testPatientId }}"
+            title: "Load Test Record {{ $randomString() }}"
+            description: "Automated load test medical record"
+            recordType: "consultation"
+            metadata:
+              testData: true
+              loadTestId: "{{ $randomString() }}"
+          capture:
+            - json: "$.recordId"
+              as: "recordId"
+          expect:
+            - statusCode: [201, 400, 401, 403]
+      
+      # Get record details
+      - get:
+          url: "/api/v1/records/{{ recordId }}"
+          name: "Get Record"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: [200, 404, 401, 403]
+      
+      # Update record
+      - put:
+          url: "/api/v1/records/{{ recordId }}"
+          name: "Update Record"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          json:
+            title: "Updated Load Test Record"
+            description: "Updated during load test"
+          expect:
+            - statusCode: [200, 404, 401, 403]
+
+  # Access control operations
+  - name: "Access Control"
+    weight: 15
+    flow:
+      # Login as doctor
+      - post:
+          url: "/api/v1/auth/login"
+          name: "Doctor Login"
+          json:
+            email: "doctor{{ $randomInt(1, 50) }}@example.com"
+            password: "testpassword123"
+          capture:
+            - json: "$.token"
+              as: "doctorToken"
+          expect:
+            - statusCode: [200, 401]
+      
+      # Grant access to record
+      - post:
+          url: "/api/v1/permissions/grant"
+          name: "Grant Access"
+          headers:
+            Authorization: "Bearer {{ doctorToken }}"
+          json:
+            recordId: "record-{{ $randomInt(1, 1000) }}"
+            granteeId: "user-{{ $randomInt(1, 1000) }}"
+            permission: "read"
+            expiresAt: "2024-12-31T23:59:59Z"
+          expect:
+            - statusCode: [200, 400, 401, 403, 404]
+      
+      # Check access
+      - post:
+          url: "/api/v1/permissions/check"
+          name: "Check Access"
+          headers:
+            Authorization: "Bearer {{ doctorToken }}"
+          json:
+            recordId: "record-{{ $randomInt(1, 1000) }}"
+            userId: "user-{{ $randomInt(1, 1000) }}"
+            permission: "read"
+          expect:
+            - statusCode: [200, 401, 403]
+
+  # Search and query operations
+  - name: "Search Operations"
+    weight: 10
+    flow:
+      # Login
+      - post:
+          url: "/api/v1/auth/login"
+          name: "Login for Search"
+          json:
+            email: "user{{ $randomInt(1, 200) }}@example.com"
+            password: "testpassword123"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+          expect:
+            - statusCode: [200, 401]
+      
+      # Search records
+      - get:
+          url: "/api/v1/records/search"
+          name: "Search Records"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          qs:
+            q: "consultation"
+            limit: 10
+            offset: "{{ $randomInt(0, 100) }}"
+          expect:
+            - statusCode: [200, 401, 403]
+      
+      # Get user records
+      - get:
+          url: "/api/v1/users/{{ testUserId }}/records"
+          name: "Get User Records"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          qs:
+            limit: 20
+            page: "{{ $randomInt(1, 5) }}"
+          expect:
+            - statusCode: [200, 401, 403, 404]
+
+  # Blockchain operations simulation
+  - name: "Blockchain Operations"
+    weight: 5
+    flow:
+      # Login as admin
+      - post:
+          url: "/api/v1/auth/login"
+          name: "Admin Login"
+          json:
+            email: "admin@blockchain-emr.com"
+            password: "adminpassword123"
+          capture:
+            - json: "$.token"
+              as: "adminToken"
+          expect:
+            - statusCode: [200, 401]
+      
+      # Query blockchain status
+      - get:
+          url: "/api/v1/blockchain/status"
+          name: "Blockchain Status"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+          expect:
+            - statusCode: [200, 401, 403]
+      
+      # Get transaction details
+      - get:
+          url: "/api/v1/blockchain/transactions/{{ $randomString() }}"
+          name: "Get Transaction"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+          expect:
+            - statusCode: [200, 404, 401, 403]
+
+# Custom functions for data generation
+functions:
+  generateMedicalData: |
+    function(context, events, done) {
+      context.vars.medicalData = {
+        symptoms: ['headache', 'fever', 'cough', 'fatigue'][Math.floor(Math.random() * 4)],
+        diagnosis: ['common_cold', 'flu', 'migraine', 'stress'][Math.floor(Math.random() * 4)],
+        treatment: ['rest', 'medication', 'therapy', 'surgery'][Math.floor(Math.random() * 4)]
+      };
+      return done();
+    }
+  
+  validateResponse: |
+    function(context, events, done) {
+      if (context.vars.statusCode >= 400) {
+        events.emit('counter', 'errors.http_4xx_5xx', 1);
+      }
+      return done();
+    }

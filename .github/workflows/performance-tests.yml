@@ -1,0 +1,296 @@
+name: Performance Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    # 每天凌晨2点运行性能测试
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      test_duration:
+        description: "测试持续时间（分钟）"
+        required: false
+        default: "15"
+        type: string
+      max_users:
+        description: "最大并发用户数"
+        required: false
+        default: "200"
+        type: string
+
+jobs:
+  performance-test:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root_password
+          MYSQL_DATABASE: emr_blockchain
+          MYSQL_USER: emr_user
+          MYSQL_PASSWORD: emr_password
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: "backend-app/package-lock.json"
+
+      - name: Install K6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Install Artillery
+        run: npm install -g artillery@latest
+
+      - name: Install backend dependencies
+        working-directory: ./backend-app
+        run: npm --prefix backend-app ci
+
+      - name: Setup environment variables
+        working-directory: ./backend-app
+        run: |
+          cp .env.example .env
+          echo "MYSQL_HOST=localhost" >> .env
+          echo "MYSQL_PORT=3306" >> .env
+          echo "MYSQL_USER=emr_user" >> .env
+          echo "MYSQL_PASSWORD=emr_password" >> .env
+          echo "MYSQL_DATABASE=emr_blockchain" >> .env
+          echo "REDIS_HOST=localhost" >> .env
+          echo "REDIS_PORT=6379" >> .env
+          echo "JWT_SECRET=test_jwt_secret_key_for_ci" >> .env
+          echo "NODE_ENV=test" >> .env
+          echo "PORT=3001" >> .env
+
+          # 复制优化环境变量
+          cp .env.optimize .env.optimize.ci
+          echo "PERFORMANCE_TARGET_TPS=1000" >> .env.optimize.ci
+          echo "PERFORMANCE_TARGET_RESPONSE_TIME=500" >> .env.optimize.ci
+          echo "PERFORMANCE_TARGET_ERROR_RATE=0.5" >> .env.optimize.ci
+          echo "MYSQL_POOL_SIZE=50" >> .env.optimize.ci
+          echo "REDIS_MAX_MEMORY=1gb" >> .env.optimize.ci
+
+      - name: Wait for services
+        run: |
+          echo "等待MySQL启动..."
+          timeout 60 bash -c 'until mysqladmin ping -h localhost -P 3306 -u root -proot_password --silent; do sleep 1; done'
+          echo "等待Redis启动..."
+          timeout 60 bash -c 'until redis-cli -h localhost -p 6379 ping; do sleep 1; done'
+
+      - name: Initialize database
+        working-directory: ./backend-app
+        run: |
+          mysql -h localhost -P 3306 -u root -proot_password emr_blockchain < sql/init.sql || true
+          npm --prefix backend-app run db:migrate || true
+
+      - name: Build application
+        working-directory: ./backend-app
+        run: npm --prefix backend-app run build
+
+      - name: Start application in background
+        working-directory: ./backend-app
+        run: |
+          npm start &
+          echo $! > app.pid
+
+          # 等待应用启动
+          echo "等待应用启动..."
+          timeout 60 bash -c 'until curl -f http://localhost:3001/health; do sleep 2; done'
+
+      - name: Run performance analysis
+        working-directory: ./backend-app
+        run: |
+          echo "运行性能分析..."
+          npm --prefix backend-app run analyze || echo "分析脚本执行完成"
+
+      - name: Run load tests
+        working-directory: ./backend-app
+        env:
+          TEST_DURATION: ${{ github.event.inputs.test_duration || '15' }}
+          MAX_USERS: ${{ github.event.inputs.max_users || '200' }}
+        run: |
+          echo "开始负载测试..."
+          echo "测试持续时间: ${TEST_DURATION}分钟"
+          echo "最大并发用户: ${MAX_USERS}"
+
+          # 运行Artillery测试
+          echo "运行Artillery负载测试..."
+          npm --prefix backend-app run load-test || echo "Artillery测试完成"
+
+          # 运行K6测试
+          echo "运行K6性能测试..."
+          npm --prefix backend-app run k6-test || echo "K6测试完成"
+
+      - name: Apply performance optimizations
+        working-directory: ./backend-app
+        run: |
+          echo "应用性能优化..."
+          npm --prefix backend-app run optimize || echo "优化脚本执行完成"
+
+      - name: Generate performance report
+        working-directory: ./backend-app
+        run: |
+          echo "生成性能报告..."
+          npm --prefix backend-app run performance:report || echo "报告生成完成"
+
+      - name: Upload performance reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-reports-${{ github.run_number }}
+          path: |
+            backend-app/reports/performance/
+            backend-app/test/performance/results/
+          retention-days: 30
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ github.run_number }}
+          path: |
+            backend-app/artillery-report.json
+            backend-app/k6-results.json
+          retention-days: 7
+
+      - name: Performance regression check
+        working-directory: ./backend-app
+        run: |
+          echo "检查性能回归..."
+
+          # 检查是否存在性能报告
+          if [ -f "reports/performance/analysis.json" ]; then
+            echo "分析性能指标..."
+            
+            # 使用jq解析JSON报告（如果可用）
+            if command -v jq &> /dev/null; then
+              OVERALL_SCORE=$(jq -r '.summary.overallScore // "N/A"' reports/performance/analysis.json)
+              TPS=$(jq -r '.metrics.tps // "N/A"' reports/performance/analysis.json)
+              RESPONSE_TIME=$(jq -r '.metrics.responseTime.p95 // "N/A"' reports/performance/analysis.json)
+              ERROR_RATE=$(jq -r '.metrics.errorRate // "N/A"' reports/performance/analysis.json)
+              
+              echo "性能指标摘要:"
+              echo "- 总体评分: $OVERALL_SCORE"
+              echo "- TPS: $TPS"
+              echo "- P95响应时间: $RESPONSE_TIME ms"
+              echo "- 错误率: $ERROR_RATE%"
+              
+              # 设置性能阈值检查
+              if [ "$TPS" != "N/A" ] && [ "$TPS" != "null" ]; then
+                if (( $(echo "$TPS < 800" | bc -l) )); then
+                  echo "⚠️ 警告: TPS ($TPS) 低于预期阈值 (800)"
+                  echo "performance_warning=true" >> $GITHUB_ENV
+                fi
+              fi
+              
+              if [ "$RESPONSE_TIME" != "N/A" ] && [ "$RESPONSE_TIME" != "null" ]; then
+                if (( $(echo "$RESPONSE_TIME > 600" | bc -l) )); then
+                  echo "⚠️ 警告: P95响应时间 ($RESPONSE_TIME ms) 超过预期阈值 (600ms)"
+                  echo "performance_warning=true" >> $GITHUB_ENV
+                fi
+              fi
+              
+              if [ "$ERROR_RATE" != "N/A" ] && [ "$ERROR_RATE" != "null" ]; then
+                if (( $(echo "$ERROR_RATE > 1.0" | bc -l) )); then
+                  echo "⚠️ 警告: 错误率 ($ERROR_RATE%) 超过预期阈值 (1.0%)"
+                  echo "performance_warning=true" >> $GITHUB_ENV
+                fi
+              fi
+            else
+              echo "jq未安装，跳过详细分析"
+            fi
+          else
+            echo "未找到性能分析报告"
+          fi
+
+      - name: Comment PR with performance results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = './backend-app/reports/performance/analysis.json';
+
+            let comment = '## 🚀 性能测试结果\n\n';
+
+            if (fs.existsSync(path)) {
+              try {
+                const report = JSON.parse(fs.readFileSync(path, 'utf8'));
+                
+                comment += `### 📊 性能指标\n`;
+                comment += `- **TPS**: ${report.metrics?.tps || 'N/A'}\n`;
+                comment += `- **P95响应时间**: ${report.metrics?.responseTime?.p95 || 'N/A'} ms\n`;
+                comment += `- **错误率**: ${report.metrics?.errorRate || 'N/A'}%\n`;
+                comment += `- **总体评分**: ${report.summary?.overallScore || 'N/A'}\n\n`;
+                
+                if (report.recommendations && report.recommendations.length > 0) {
+                  comment += `### 💡 优化建议\n`;
+                  report.recommendations.slice(0, 3).forEach((rec, index) => {
+                    comment += `${index + 1}. ${rec}\n`;
+                  });
+                  comment += '\n';
+                }
+                
+                if (process.env.performance_warning === 'true') {
+                  comment += '⚠️ **注意**: 检测到性能指标低于预期阈值，请查看详细报告。\n\n';
+                } else {
+                  comment += '✅ **状态**: 所有性能指标均在预期范围内。\n\n';
+                }
+                
+              } catch (error) {
+                comment += '❌ 解析性能报告时出错\n\n';
+              }
+            } else {
+              comment += '❌ 未找到性能测试报告\n\n';
+            }
+
+            comment += `### 📁 报告文件\n`;
+            comment += `性能测试报告已上传为构建产物，可在 [Actions](${context.payload.repository.html_url}/actions/runs/${context.runId}) 页面下载。\n`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Stop application
+        if: always()
+        working-directory: ./backend-app
+        run: |
+          if [ -f app.pid ]; then
+            kill $(cat app.pid) || true
+            rm app.pid
+          fi
+
+          # 确保所有相关进程都被终止
+          pkill -f "node.*dist/server.js" || true
+          pkill -f "npm.*start" || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps -q | xargs -r docker stop
+          docker system prune -f

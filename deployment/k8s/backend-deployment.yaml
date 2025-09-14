@@ -1,0 +1,370 @@
+# 后端服务部署配置
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-deployment
+  namespace: emr-blockchain-prod
+  labels:
+    app: blockchain-emr
+    component: backend
+    version: "1.0.0"
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 2
+  selector:
+    matchLabels:
+      app: blockchain-emr
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: blockchain-emr
+        component: backend
+        version: "1.0.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3001"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: emr-app
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+      - name: wait-for-mysql
+        image: busybox:1.35
+        command: ['sh', '-c']
+        args:
+        - |
+          echo "Waiting for MySQL to be ready..."
+          until nc -z mysql-service 3306; do
+            echo "MySQL is not ready yet, waiting..."
+            sleep 5
+          done
+          echo "MySQL is ready!"
+      - name: wait-for-ipfs
+        image: busybox:1.35
+        command: ['sh', '-c']
+        args:
+        - |
+          echo "Waiting for IPFS to be ready..."
+          until nc -z ipfs-service 5001; do
+            echo "IPFS is not ready yet, waiting..."
+            sleep 5
+          done
+          echo "IPFS is ready!"
+      containers:
+      - name: backend
+        image: blockchain-emr-backend:latest
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          capabilities:
+            drop:
+            - ALL
+        ports:
+        - containerPort: 3001
+          name: http
+          protocol: TCP
+        env:
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config
+              key: NODE_ENV
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config
+              key: PORT
+        - name: MYSQL_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config
+              key: MYSQL_HOST
+        - name: MYSQL_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config
+              key: MYSQL_PORT
+        - name: MYSQL_USER
+          value: "emr_user"
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: emr-secrets
+              key: mysql-user-password
+        - name: MYSQL_DATABASE
+          value: "emr_blockchain"
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: emr-secrets
+              key: jwt-secret
+        - name: JWT_REFRESH_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: emr-secrets
+              key: jwt-refresh-secret
+        - name: ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: emr-secrets
+              key: encryption-key
+        - name: SESSION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: emr-secrets
+              key: session-secret
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: emr-secrets
+              key: redis-password
+        - name: JWT_EXPIRES_IN
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config
+              key: JWT_EXPIRES_IN
+        - name: IPFS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config
+              key: IPFS_URL
+        - name: FABRIC_CHANNEL_NAME
+          valueFrom:
+            secretKeyRef:
+              name: emr-fabric-secret
+              key: FABRIC_CHANNEL_NAME
+        - name: FABRIC_CHAINCODE_NAME
+          valueFrom:
+            secretKeyRef:
+              name: emr-fabric-secret
+              key: FABRIC_CHAINCODE_NAME
+        - name: FABRIC_MSP_ID
+          valueFrom:
+            secretKeyRef:
+              name: emr-fabric-secret
+              key: FABRIC_MSP_ID
+        - name: FABRIC_WALLET_PATH
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config
+              key: FABRIC_WALLET_PATH
+        - name: FABRIC_CONNECTION_PROFILE
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config
+              key: FABRIC_CONNECTION_PROFILE
+        - name: CACHE_TTL
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config
+              key: CACHE_TTL
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config
+              key: LOG_LEVEL
+        - name: LOG_FORMAT
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config
+              key: LOG_FORMAT
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config
+              key: REDIS_PORT
+        volumeMounts:
+        - name: backend-logs
+          mountPath: /app/logs
+        - name: backend-wallet
+          mountPath: /app/wallet
+        - name: fabric-config
+          mountPath: /app/connection-org1.json
+          subPath: connection-org1.json
+          readOnly: true
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          runAsUser: 1001
+          runAsGroup: 1001
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: backend-logs
+        persistentVolumeClaim:
+          claimName: backend-logs-pvc
+      - name: backend-wallet
+        persistentVolumeClaim:
+          claimName: backend-wallet-pvc
+      - name: fabric-config
+        configMap:
+          name: emr-fabric-config
+      securityContext:
+        fsGroup: 1001
+        runAsNonRoot: true
+      restartPolicy: Always
+---
+# 后端服务
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: backend
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "3001"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3001
+    targetPort: 3001
+    protocol: TCP
+    name: http
+  selector:
+    app: blockchain-emr
+    component: backend
+---
+# 后端日志存储
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backend-logs-pvc
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: backend
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+---
+# 后端钱包存储
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backend-wallet-pvc
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: backend
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard
+---
+# 水平Pod自动扩缩容
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend-deployment
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+      selectPolicy: Max
+---
+# Pod中断预算
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: backend
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: blockchain-emr
+      component: backend

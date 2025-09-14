@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>离线状态 - 电子病历管理系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .offline-container {
+            background: white;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 500px;
+            margin: 20px;
+            animation: slideUp 0.5s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .offline-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            opacity: 0.8;
+        }
+
+        .offline-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #2c3e50;
+            margin-bottom: 16px;
+        }
+
+        .offline-message {
+            font-size: 16px;
+            color: #7f8c8d;
+            margin-bottom: 30px;
+            line-height: 1.8;
+        }
+
+        .offline-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 160px;
+            justify-content: center;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: #f8f9fa;
+            color: #495057;
+            border: 1px solid #dee2e6;
+        }
+
+        .btn-secondary:hover {
+            background: #e9ecef;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .offline-tips {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .tips-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 12px;
+        }
+
+        .tips-list {
+            text-align: left;
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+
+        .tips-list li {
+            margin-bottom: 8px;
+            padding-left: 20px;
+            position: relative;
+        }
+
+        .tips-list li::before {
+            content: "•";
+            color: #667eea;
+            font-weight: bold;
+            position: absolute;
+            left: 0;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #fff3cd;
+            color: #856404;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            margin-bottom: 20px;
+            border: 1px solid #ffeaa7;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ffc107;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(1.2);
+                opacity: 0.7;
+            }
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        /* 深色模式支持 */
+        @media (prefers-color-scheme: dark) {
+            .offline-container {
+                background: #2c3e50;
+                color: #ecf0f1;
+            }
+
+            .offline-title {
+                color: #ecf0f1;
+            }
+
+            .offline-message {
+                color: #bdc3c7;
+            }
+
+            .tips-list {
+                color: #bdc3c7;
+            }
+
+            .tips-title {
+                color: #ecf0f1;
+            }
+
+            .btn-secondary {
+                background: #34495e;
+                color: #ecf0f1;
+                border-color: #4a5f7a;
+            }
+
+            .btn-secondary:hover {
+                background: #4a5f7a;
+            }
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 480px) {
+            .offline-container {
+                padding: 30px 20px;
+                margin: 10px;
+            }
+
+            .offline-title {
+                font-size: 24px;
+            }
+
+            .offline-icon {
+                font-size: 48px;
+            }
+
+            .btn {
+                padding: 12px 20px;
+                font-size: 14px;
+                width: 100%;
+            }
+        }
+
+        /* 打印样式 */
+        @media print {
+            body {
+                background: white !important;
+            }
+
+            .offline-container {
+                box-shadow: none !important;
+                background: white !important;
+            }
+
+            .btn {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="offline-container">
+        <!-- 状态指示器 -->
+        <div class="status-indicator">
+            <div class="status-dot"></div>
+            <span>离线模式</span>
+        </div>
+
+        <!-- 离线图标 -->
+        <div class="offline-icon">🔌</div>
+
+        <!-- 标题和消息 -->
+        <h1 class="offline-title">当前处于离线状态</h1>
+        <p class="offline-message">
+            很抱歉，您当前无法连接到网络。请检查您的网络连接，然后重试。<br>
+            在离线状态下，您仍可以查看之前缓存的页面内容。
+        </p>
+
+        <!-- 操作按钮 -->
+        <div class="offline-actions">
+            <button class="btn" onclick="location.reload()">
+                <span>🔄</span>
+                重新加载页面
+            </button>
+            <button class="btn btn-secondary" onclick="checkNetworkStatus()">
+                <span>📡</span>
+                检查网络状态
+            </button>
+            <a href="/" class="btn btn-secondary">
+                <span>🏠</span>
+                返回首页
+            </a>
+        </div>
+
+        <!-- 离线使用小贴士 -->
+        <div class="offline-tips">
+            <h3 class="tips-title">💡 离线使用小贴士</h3>
+            <ul class="tips-list">
+                <li>您可以继续浏览之前访问过的页面</li>
+                <li>已缓存的病历数据仍可正常查看</li>
+                <li>离线时的操作会在联网后自动同步</li>
+                <li>推荐使用手机热点或其他网络连接</li>
+                <li>联网后页面会自动刷新最新数据</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // 检查网络状态
+        function checkNetworkStatus() {
+            const statusIndicator = document.querySelector('.status-indicator');
+            const statusDot = document.querySelector('.status-dot');
+            const statusText = statusIndicator.querySelector('span');
+            
+            if (navigator.onLine) {
+                statusIndicator.style.background = '#d4edda';
+                statusIndicator.style.color = '#155724';
+                statusIndicator.style.borderColor = '#c3e6cb';
+                statusDot.style.background = '#28a745';
+                statusText.textContent = '网络已连接';
+                
+                // 3秒后自动刷新页面
+                setTimeout(() => {
+                    location.reload();
+                }, 3000);
+            } else {
+                // 显示检查中状态
+                statusText.textContent = '检查网络中...';
+                
+                // 2秒后恢复原状态
+                setTimeout(() => {
+                    statusText.textContent = '离线模式';
+                }, 2000);
+            }
+        }
+
+        // 监听网络状态变化
+        window.addEventListener('online', function() {
+            console.log('Network is back online');
+            checkNetworkStatus();
+        });
+
+        window.addEventListener('offline', function() {
+            console.log('Network went offline');
+        });
+
+        // 监听可见性变化（用户切换标签页）
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden && navigator.onLine) {
+                // 页面变为可见且有网络连接时，检查是否需要刷新
+                setTimeout(() => {
+                    location.reload();
+                }, 1000);
+            }
+        });
+
+        // 定期检查网络状态
+        setInterval(function() {
+            if (navigator.onLine) {
+                // 网络恢复，准备刷新页面
+                const message = document.querySelector('.offline-message');
+                message.innerHTML = '网络连接已恢复，正在为您刷新页面... <span style="color: #28a745;">✓</span>';
+                
+                setTimeout(() => {
+                    location.reload();
+                }, 2000);
+            }
+        }, 5000);
+
+        // 页面加载时检查网络状态
+        document.addEventListener('DOMContentLoaded', function() {
+            checkNetworkStatus();
+        });
+
+        // 键盘快捷键支持
+        document.addEventListener('keydown', function(event) {
+            // Ctrl/Cmd + R 刷新页面
+            if ((event.ctrlKey || event.metaKey) && event.key === 'r') {
+                event.preventDefault();
+                location.reload();
+            }
+            
+            // F5 刷新页面
+            if (event.key === 'F5') {
+                event.preventDefault();
+                location.reload();
+            }
+            
+            // Escape 返回首页
+            if (event.key === 'Escape') {
+                location.href = '/';
+            }
+        });
+
+        // 添加一些用户友好的交互效果
+        document.querySelectorAll('.btn').forEach(button => {
+            button.addEventListener('mouseenter', function() {
+                this.style.transform = 'translateY(-2px)';
+            });
+            
+            button.addEventListener('mouseleave', function() {
+                this.style.transform = 'translateY(0)';
+            });
+        });
+
+        // Service Worker 消息监听
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('message', function(event) {
+                if (event.data.type === 'CACHE_UPDATED') {
+                    const message = document.querySelector('.offline-message');
+                    message.innerHTML += '<br><span style="color: #28a745;">📱 应用已更新，重新加载后可使用新功能</span>';
+                }
+            });
+        }
+    </script>
+</body>
+</html>

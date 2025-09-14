@@ -1,0 +1,289 @@
+# 前端服务部署配置
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-deployment
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: frontend
+    version: "1.0.0"
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 2
+  selector:
+    matchLabels:
+      app: blockchain-emr
+      component: frontend
+  template:
+    metadata:
+      labels:
+        app: blockchain-emr
+        component: frontend
+        version: "1.0.0"
+    spec:
+      initContainers:
+      - name: wait-for-backend
+        image: busybox:1.35
+        command: ['sh', '-c']
+        args:
+        - |
+          echo "Waiting for backend to be ready..."
+          until nc -z backend-service 3001; do
+            echo "Backend is not ready yet, waiting..."
+            sleep 5
+          done
+          echo "Backend is ready!"
+      containers:
+      - name: frontend
+        image: blockchain-emr-frontend:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3004
+          name: http
+          protocol: TCP
+        env:
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config
+              key: NODE_ENV
+        - name: REACT_APP_API_URL
+          value: "https://emr.example.com/api/v1"
+        - name: REACT_APP_WS_URL
+          value: "wss://emr.example.com/ws"
+        - name: NGINX_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config
+              key: FRONTEND_PORT
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/conf.d/default.conf
+          subPath: frontend.conf
+          readOnly: true
+        - name: nginx-cache
+          mountPath: /var/cache/nginx
+        - name: nginx-logs
+          mountPath: /var/log/nginx
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3004
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3004
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          runAsUser: 101  # nginx user
+          runAsGroup: 101
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - CHOWN
+            - SETGID
+            - SETUID
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: frontend-nginx-config
+      - name: nginx-cache
+        emptyDir: {}
+      - name: nginx-logs
+        persistentVolumeClaim:
+          claimName: frontend-logs-pvc
+      securityContext:
+        fsGroup: 101
+        runAsNonRoot: true
+      restartPolicy: Always
+---
+# 前端服务
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: frontend
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3004
+    targetPort: 3004
+    protocol: TCP
+    name: http
+  selector:
+    app: blockchain-emr
+    component: frontend
+---
+# 前端nginx配置
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-nginx-config
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: frontend
+data:
+  frontend.conf: |
+    # 前端nginx配置
+    server {
+        listen 3004;
+        server_name localhost;
+        root /usr/share/nginx/html;
+        index index.html index.htm;
+        
+        # 安全头
+        add_header X-Frame-Options DENY always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https: wss:;" always;
+        
+        # 启用gzip压缩
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 1024;
+        gzip_proxied any;
+        gzip_comp_level 6;
+        gzip_types
+            text/plain
+            text/css
+            text/xml
+            text/javascript
+            application/json
+            application/javascript
+            application/xml+rss
+            application/atom+xml
+            image/svg+xml;
+        
+        # 缓存静态资源
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+            add_header X-Content-Type-Options nosniff;
+        }
+        
+        # React Router支持
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+        
+        # 健康检查端点
+        location /health {
+            access_log off;
+            return 200 "healthy\n";
+            add_header Content-Type text/plain;
+        }
+        
+        # 错误页面
+        error_page 404 /index.html;
+        error_page 500 502 503 504 /50x.html;
+        location = /50x.html {
+            root /usr/share/nginx/html;
+        }
+    }
+---
+# 前端日志存储
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: frontend-logs-pvc
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: frontend
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: standard
+---
+# 前端水平Pod自动扩缩容
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend-hpa
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: frontend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend-deployment
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+      selectPolicy: Max
+---
+# Pod中断预算
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend-pdb
+  namespace: emr-namespace
+  labels:
+    app: blockchain-emr
+    component: frontend
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: blockchain-emr
+      component: frontend

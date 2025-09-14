@@ -1,0 +1,316 @@
+version: "3.8"
+
+services:
+  # MySQL Database
+  mysql:
+    image: docker.m.daocloud.io/library/mysql:8.0
+    container_name: blockchain-emr-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-blockchain_emr}
+      MYSQL_USER: ${MYSQL_USER:-emr_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-emr_password}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/init:/docker-entrypoint-initdb.d
+      - ./database/config/my.cnf:/etc/mysql/conf.d/my.cnf
+    networks:
+      - blockchain-emr-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+    # 添加资源限制
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: blockchain-emr-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - blockchain-emr-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # IPFS Node 1 (Primary)
+  ipfs-node1:
+    image: ipfs/kubo:latest
+    container_name: blockchain-emr-ipfs-1
+    restart: unless-stopped
+    environment:
+      - IPFS_PROFILE=server
+      - IPFS_PATH=/ipfsdata
+    ports:
+      - "4001:4001" # P2P
+      - "5001:5001" # API
+      - "8080:8080" # Gateway
+    volumes:
+      - ipfs1_data:/ipfsdata
+      - ./ipfs/config:/container-init.d
+    networks:
+      - blockchain-emr-network
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # IPFS Node 2 (Backup)
+  ipfs-node2:
+    image: ipfs/kubo:latest
+    container_name: blockchain-emr-ipfs-2
+    restart: unless-stopped
+    environment:
+      - IPFS_PROFILE=server
+      - IPFS_PATH=/ipfsdata
+    ports:
+      - "4002:4001" # P2P
+      - "5002:5001" # API
+      - "8081:8080" # Gateway
+    volumes:
+      - ipfs2_data:/ipfsdata
+      - ./ipfs/config:/container-init.d
+    networks:
+      - blockchain-emr-network
+    depends_on:
+      - ipfs-node1
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Hyperledger Fabric CA
+  ca.org1.example.com:
+    image: hyperledger/fabric-ca:latest
+    container_name: ca.org1.example.com
+    restart: unless-stopped
+    environment:
+      - FABRIC_CA_HOME=/etc/hyperledger/fabric-ca-server
+      - FABRIC_CA_SERVER_CA_NAME=ca.org1.example.com
+      - FABRIC_CA_SERVER_TLS_ENABLED=true
+      - FABRIC_CA_SERVER_PORT=7054
+      - FABRIC_CA_SERVER_OPERATIONS_LISTENADDRESS=0.0.0.0:17054
+    ports:
+      - "7054:7054"
+      - "17054:17054"
+    command: sh -c 'fabric-ca-server start -b admin:adminpw -d'
+    volumes:
+      - ./fabric/organizations/peerOrganizations/org1.example.com/ca/:/etc/hyperledger/fabric-ca-server
+    networks:
+      - blockchain-emr-network
+
+  # Hyperledger Fabric Orderer
+  orderer.example.com:
+    image: hyperledger/fabric-orderer:latest
+    container_name: orderer.example.com
+    restart: unless-stopped
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - ORDERER_GENERAL_LISTENADDRESS=0.0.0.0
+      - ORDERER_GENERAL_LISTENPORT=7050
+      - ORDERER_GENERAL_LOCALMSPID=OrdererMSP
+      - ORDERER_GENERAL_LOCALMSPDIR=/var/hyperledger/orderer/msp
+      - ORDERER_GENERAL_TLS_ENABLED=true
+      - ORDERER_GENERAL_TLS_PRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_GENERAL_TLS_CERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_GENERAL_TLS_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_GENERAL_CLUSTER_CLIENTCERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_GENERAL_CLUSTER_CLIENTPRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_GENERAL_CLUSTER_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_GENERAL_BOOTSTRAPMETHOD=none
+      - ORDERER_CHANNELPARTICIPATION_ENABLED=true
+      - ORDERER_ADMIN_TLS_ENABLED=true
+      - ORDERER_ADMIN_TLS_CERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_ADMIN_TLS_PRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_ADMIN_TLS_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_ADMIN_TLS_CLIENTROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_ADMIN_LISTENADDRESS=0.0.0.0:7053
+      - ORDERER_OPERATIONS_LISTENADDRESS=orderer.example.com:9443
+      - ORDERER_METRICS_PROVIDER=prometheus
+    working_dir: /root
+    command: orderer
+    volumes:
+      - ./fabric/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp:/var/hyperledger/orderer/msp
+      - ./fabric/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/tls/:/var/hyperledger/orderer/tls
+      - orderer_data:/var/hyperledger/production/orderer
+    ports:
+      - "7050:7050"
+      - "7053:7053"
+      - "9443:9443"
+    networks:
+      - blockchain-emr-network
+
+  # Hyperledger Fabric Peer
+  peer0.org1.example.com:
+    image: hyperledger/fabric-peer:latest
+    container_name: peer0.org1.example.com
+    restart: unless-stopped
+    environment:
+      - FABRIC_CFG_PATH=/etc/hyperledger/peercfg
+      - FABRIC_LOGGING_SPEC=ERROR  # 减少日志输出以降低CPU使用率
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_PROFILE_ENABLED=false
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_ID=peer0.org1.example.com
+      - CORE_PEER_ADDRESS=peer0.org1.example.com:7051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:7051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.org1.example.com:7052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:7052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.org1.example.com:7051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.org1.example.com:7051
+      - CORE_PEER_LOCALMSPID=Org1MSP
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+      - CORE_OPERATIONS_LISTENADDRESS=peer0.org1.example.com:9444
+      - CORE_METRICS_PROVIDER=disabled  # 禁用指标收集以减少CPU使用率
+      - CHAINCODE_AS_A_SERVICE_BUILDER_CONFIG={"peername":"peer0org1"}
+      - CORE_CHAINCODE_EXECUTETIMEOUT=300s
+    volumes:
+      - ./fabric/organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com:/etc/hyperledger/fabric
+      - peer0_data:/var/hyperledger/production
+    working_dir: /root
+    command: peer node start
+    ports:
+      - "7051:7051"
+      - "9444:9444"
+    networks:
+      - blockchain-emr-network
+    depends_on:
+      - orderer.example.com
+    # 添加资源限制
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1.5G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # Backend Application
+  backend:
+    build:
+      context: ./backend-app
+      dockerfile: Dockerfile
+    container_name: blockchain-emr-backend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3000
+      # 添加轻量模式环境变量以减少CPU使用率
+      - LIGHT_MODE=${LIGHT_MODE:-true}
+      - WARM_CACHE_ENABLED=${WARM_CACHE_ENABLED:-false}
+      - METRICS_INTERVAL_MS=${METRICS_INTERVAL_MS:-300000}
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-blockchain_emr}
+      - MYSQL_USER=${MYSQL_USER:-emr_user}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-emr_password}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - IPFS_HOST=ipfs-node1
+      - IPFS_PORT=5001
+      - FABRIC_PEER_ENDPOINT=peer0.org1.example.com:7051
+      - FABRIC_CA_ENDPOINT=ca.org1.example.com:7054
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-your-32-char-encryption-key-here}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend-app:/app
+      - ./fabric:/app/fabric
+      - backend_logs:/app/logs
+    networks:
+      - blockchain-emr-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ipfs-node1:
+        condition: service_healthy
+      peer0.org1.example.com:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/monitoring/health"]
+      interval: 60s  # 增加健康检查间隔
+      timeout: 10s
+      retries: 3
+    # 添加资源限制以防止CPU占用过高
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # Frontend Application
+  frontend:
+    build:
+      context: ./frontend-app
+      dockerfile: Dockerfile
+    container_name: blockchain-emr-frontend
+    restart: unless-stopped
+    environment:
+      - REACT_APP_API_URL=http://localhost:3000/api/v1
+      - REACT_APP_ENVIRONMENT=${NODE_ENV:-development}
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./frontend-app:/app
+    networks:
+      - blockchain-emr-network
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  ipfs1_data:
+    driver: local
+  ipfs2_data:
+    driver: local
+  orderer_data:
+    driver: local
+  peer0_data:
+    driver: local
+  backend_logs:
+    driver: local
+
+networks:
+  blockchain-emr-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

@@ -1,0 +1,110 @@
+{
+  "common": {
+    "loading": "加载中...",
+    "error": "错误",
+    "success": "成功",
+    "cancel": "取消",
+    "confirm": "确认",
+    "save": "保存",
+    "delete": "删除",
+    "edit": "编辑",
+    "view": "查看",
+    "search": "搜索",
+    "filter": "筛选",
+    "export": "导出",
+    "import": "导入",
+    "download": "下载",
+    "upload": "上传",
+    "close": "关闭",
+    "back": "返回",
+    "next": "下一步",
+    "previous": "上一步",
+    "submit": "提交",
+    "reset": "重置",
+    "pageNotFound": "页面未找到",
+    "language": "语言"
+  },
+  "app": {
+    "title": "电子病历管理系统",
+    "footer": "© 2024 电子病历管理系统. 保留所有权利。"
+  },
+  "auth": {
+    "login": {
+      "title": "登录",
+      "subtitle": "欢迎回来",
+      "submit": "安全登录",
+      "submitting": "登录中...",
+      "noAccount": "还没有账户？",
+      "signUp": "立即注册",
+      "forgotPassword": "忘记密码？",
+      "rememberMe": "记住我",
+      "selectRole": "选择角色",
+      "systemTitle": "医疗记录管理系统",
+      "systemSubtitle": "安全、便捷的医疗数据管理平台",
+      "demoAccount": "演示账户",
+      "diagnostics": "系统诊断",
+      "runningDiagnostics": "诊断中..."
+    },
+    "register": {
+      "title": "注册",
+      "subtitle": "创建新账户",
+      "submit": "注册",
+      "hasAccount": "已有账户？",
+      "signIn": "登录"
+    },
+    "fields": {
+      "email": "邮箱",
+      "username": "用户名",
+      "password": "密码",
+      "confirmPassword": "确认密码",
+      "name": "姓名",
+      "role": "角色"
+    },
+    "roles": {
+      "patient": "患者",
+      "doctor": "医生"
+    },
+    "placeholders": {
+      "email": "请输入邮箱地址",
+      "username": "请输入您的用户名",
+      "password": "请输入您的密码",
+      "confirmPassword": "请再次输入密码",
+      "name": "请输入姓名"
+    },
+    "validation": {
+      "allFieldsRequired": "请填写所有必填字段",
+      "emailInvalid": "邮箱格式不正确",
+      "passwordMismatch": "密码不匹配",
+      "passwordTooShort": "密码至少需要6个字符",
+      "usernameRequired": "请输入用户名",
+      "passwordRequired": "请输入密码"
+    },
+    "errors": {
+      "loginFailed": "登录失败",
+      "registerFailed": "注册失败"
+    },
+    "passwordStrength": {
+      "label": "密码强度",
+      "weak": "弱",
+      "fair": "中等",
+      "good": "强",
+      "strong": "很强"
+    },
+    "accessibility": {
+      "showPassword": "显示密码",
+      "hidePassword": "隐藏密码",
+      "toggleLanguage": "切换语言",
+      "toggleTheme": "切换主题"
+    }
+  },
+  "navigation": {
+    "dashboard": "仪表板",
+    "medicalRecords": "病历管理",
+    "profile": "个人资料",
+    "system": "系统",
+    "logout": "退出登录"
+  },
+  "settings": {
+    "language": "语言设置"
+  }
+}

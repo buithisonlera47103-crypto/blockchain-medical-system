@@ -1,0 +1,67 @@
+{
+  "timestamp": "2025-09-01T16:23:39.614Z",
+  "summary": {
+    "total": 8,
+    "passed": 0,
+    "failed": 8,
+    "successRate": "0.00%"
+  },
+  "results": [
+    {
+      "test": "后端服务健康检查",
+      "status": "FAIL",
+      "message": "服务无法访问",
+      "details": "connect ECONNREFUSED 127.0.0.1:3001",
+      "timestamp": "2025-09-01T16:23:39.607Z"
+    },
+    {
+      "test": "前端服务检查",
+      "status": "FAIL",
+      "message": "前端服务无法访问",
+      "details": "connect ECONNREFUSED 127.0.0.1:5173",
+      "timestamp": "2025-09-01T16:23:39.609Z"
+    },
+    {
+      "test": "数据库连接检查",
+      "status": "FAIL",
+      "message": "无法检查数据库状态",
+      "details": "connect ECONNREFUSED 127.0.0.1:3001",
+      "timestamp": "2025-09-01T16:23:39.610Z"
+    },
+    {
+      "test": "用户认证API",
+      "status": "FAIL",
+      "message": "认证API无法访问",
+      "details": "connect ECONNREFUSED 127.0.0.1:3001",
+      "timestamp": "2025-09-01T16:23:39.611Z"
+    },
+    {
+      "test": "医疗记录API",
+      "status": "FAIL",
+      "message": "医疗记录API无法访问",
+      "details": "connect ECONNREFUSED 127.0.0.1:3001",
+      "timestamp": "2025-09-01T16:23:39.612Z"
+    },
+    {
+      "test": "区块链网络连接",
+      "status": "FAIL",
+      "message": "无法检查区块链状态",
+      "details": "connect ECONNREFUSED 127.0.0.1:3001",
+      "timestamp": "2025-09-01T16:23:39.612Z"
+    },
+    {
+      "test": "IPFS文件存储",
+      "status": "FAIL",
+      "message": "无法检查IPFS状态",
+      "details": "connect ECONNREFUSED 127.0.0.1:3001",
+      "timestamp": "2025-09-01T16:23:39.613Z"
+    },
+    {
+      "test": "API文档可访问性",
+      "status": "FAIL",
+      "message": "API文档无法访问",
+      "details": "connect ECONNREFUSED 127.0.0.1:3001",
+      "timestamp": "2025-09-01T16:23:39.614Z"
+    }
+  ]
+}

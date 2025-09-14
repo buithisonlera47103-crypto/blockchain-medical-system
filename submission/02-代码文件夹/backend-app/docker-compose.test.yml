@@ -1,0 +1,31 @@
+version: '3.8'
+services:
+  mysql-test:
+    image: docker.m.daocloud.io/mysql:8.0
+    container_name: emr-mysql-test
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: emr_test
+      MYSQL_USER: emr
+      MYSQL_PASSWORD: emrpass
+    ports:
+      - '3308:3306'
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-uroot', '-prootpass']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - ./docker/mysql/initdb.d:/docker-entrypoint-initdb.d:ro
+    command: [
+      "--default-authentication-plugin=mysql_native_password",
+      "--character-set-server=utf8mb4",
+      "--collation-server=utf8mb4_unicode_ci",
+      "--skip-symbolic-links"
+    ]
+networks:
+  default:
+    name: emr-test-net
+    driver: bridge
+

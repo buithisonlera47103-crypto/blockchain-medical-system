@@ -1,0 +1,536 @@
+name: 🚀 EMR区块链系统 CI/CD流水线
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened]
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE_NAME: ${{ github.repository }}/backend
+  FRONTEND_IMAGE_NAME: ${{ github.repository }}/frontend
+  NODE_VERSION: '18.x'
+  GO_VERSION: '1.21'
+
+jobs:
+  # 代码质量检查
+  code-quality:
+    name: 🔍 代码质量检查
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 检出代码
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: 🏗️ 设置Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: |
+          backend-app/package-lock.json
+          react-app/package-lock.json
+
+    - name: 📦 安装依赖
+      run: |
+        npm --prefix backend-app ci
+        cd react-app && npm ci
+
+    - name: 🧹 ESLint检查 (后端)
+      run: npm --prefix backend-app run lint
+      continue-on-error: true
+
+    - name: 🧹 TypeScript检查 (前端)
+      run: cd react-app && npm run type-check
+      continue-on-error: true
+
+    - name: 🔒 安全漏洞扫描
+      run: |
+        cd backend-app && npm audit --audit-level moderate
+        cd ../react-app && npm audit --audit-level moderate
+      continue-on-error: true
+
+    - name: 📊 SonarCloud代码分析
+      uses: SonarSource/sonarcloud-github-action@master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # 单元测试
+  unit-tests:
+    name: 🧪 单元测试
+    runs-on: ubuntu-latest
+    needs: code-quality
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test_password
+          MYSQL_DATABASE: emr_test
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+        ports:
+          - 3306:3306
+          
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+        ports:
+          - 6379:6379
+
+    steps:
+    - name: 📥 检出代码
+      uses: actions/checkout@v4
+
+    - name: 🏗️ 设置Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: |
+          backend-app/package-lock.json
+          react-app/package-lock.json
+
+    - name: 📦 安装依赖
+      run: |
+        npm --prefix backend-app ci
+        cd react-app && npm ci
+
+    - name: 🧪 运行后端单元测试
+      env:
+        NODE_ENV: test
+        MYSQL_HOST: localhost
+        MYSQL_PORT: 3306
+        MYSQL_DATABASE: emr_test
+        MYSQL_USER: root
+        MYSQL_PASSWORD: test_password
+        REDIS_HOST: localhost
+        REDIS_PORT: 6379
+        JWT_SECRET: test_jwt_secret
+      run: npm --prefix backend-app run test:unit
+
+    - name: 🧪 运行前端单元测试
+      env:
+        CI: true
+      run: cd react-app && npm test -- --coverage --watchAll=false
+
+    - name: 📊 上传测试覆盖率报告
+      uses: codecov/codecov-action@v3
+      with:
+        files: |
+          ./backend-app/coverage/lcov.info
+          ./react-app/coverage/lcov.info
+        flags: unittests
+        name: unit-test-coverage
+
+  # 集成测试
+  integration-tests:
+    name: 🔗 集成测试
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test_password
+          MYSQL_DATABASE: emr_test
+        ports:
+          - 3306:3306
+          
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+          
+      ipfs:
+        image: ipfs/kubo:latest
+        ports:
+          - 5001:5001
+          - 8080:8080
+
+    steps:
+    - name: 📥 检出代码
+      uses: actions/checkout@v4
+
+    - name: 🏗️ 设置Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: backend-app/package-lock.json
+
+    - name: 📦 安装依赖
+      run: npm --prefix backend-app ci
+
+    - name: ⏳ 等待服务就绪
+      run: |
+        # 等待MySQL就绪
+        timeout 60 bash -c 'until mysqladmin ping -h localhost -P 3306 -u root -ptest_password; do sleep 1; done'
+        # 等待IPFS就绪
+        timeout 60 bash -c 'until curl -f http://localhost:5001/api/v0/id; do sleep 1; done'
+
+    - name: 🗃️ 初始化数据库
+      env:
+        MYSQL_HOST: localhost
+        MYSQL_PORT: 3306
+        MYSQL_DATABASE: emr_test
+        MYSQL_USER: root
+        MYSQL_PASSWORD: test_password
+      run: |
+        cd backend-app
+        mysql -h localhost -P 3306 -u root -ptest_password emr_test < src/database/medical_records_schema.sql
+
+    - name: 🔗 运行集成测试
+      env:
+        NODE_ENV: test
+        MYSQL_HOST: localhost
+        MYSQL_PORT: 3306
+        MYSQL_DATABASE: emr_test
+        MYSQL_USER: root
+        MYSQL_PASSWORD: test_password
+        REDIS_HOST: localhost
+        REDIS_PORT: 6379
+        IPFS_API_URL: http://localhost:5001
+        JWT_SECRET: test_jwt_secret
+      run: npm --prefix backend-app run test:integration
+
+  # 构建Docker镜像
+  build-images:
+    name: 🐳 构建Docker镜像
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    if: github.event_name == 'push'
+    
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      backend-image: ${{ steps.meta-backend.outputs.tags }}
+      frontend-image: ${{ steps.meta-frontend.outputs.tags }}
+
+    steps:
+    - name: 📥 检出代码
+      uses: actions/checkout@v4
+
+    - name: 🏗️ 设置Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: 🔐 登录Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    # 后端镜像构建
+    - name: 📋 提取后端元数据
+      id: meta-backend
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: 🔨 构建并推送后端镜像
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend-app
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta-backend.outputs.tags }}
+        labels: ${{ steps.meta-backend.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          NODE_ENV=production
+
+    # 前端镜像构建
+    - name: 📋 提取前端元数据
+      id: meta-frontend
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: 🔨 构建并推送前端镜像
+      uses: docker/build-push-action@v5
+      with:
+        context: ./react-app
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta-frontend.outputs.tags }}
+        labels: ${{ steps.meta-frontend.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          REACT_APP_ENVIRONMENT=production
+
+  # 安全扫描
+  security-scan:
+    name: 🛡️ 安全扫描
+    runs-on: ubuntu-latest
+    needs: build-images
+    
+    steps:
+    - name: 📥 检出代码
+      uses: actions/checkout@v4
+
+    - name: 🔍 运行Trivy漏洞扫描 (后端)
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ needs.build-images.outputs.backend-image }}
+        format: 'sarif'
+        output: 'backend-trivy-results.sarif'
+
+    - name: 🔍 运行Trivy漏洞扫描 (前端)
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ needs.build-images.outputs.frontend-image }}
+        format: 'sarif'
+        output: 'frontend-trivy-results.sarif'
+
+    - name: 📤 上传Trivy扫描结果到GitHub Security
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: |
+          backend-trivy-results.sarif
+          frontend-trivy-results.sarif
+
+    - name: 🔒 OWASP依赖检查
+      uses: dependency-check/Dependency-Check_Action@main
+      with:
+        project: 'EMR-Blockchain'
+        path: '.'
+        format: 'ALL'
+        args: >
+          --enableRetired
+          --enableExperimental
+          --out reports
+
+    - name: 📤 上传OWASP扫描结果
+      uses: actions/upload-artifact@v3
+      with:
+        name: dependency-check-reports
+        path: reports/
+
+  # 性能测试
+  performance-tests:
+    name: ⚡ 性能测试
+    runs-on: ubuntu-latest
+    needs: build-images
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test_password
+          MYSQL_DATABASE: emr_test
+        ports:
+          - 3306:3306
+          
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+    - name: 📥 检出代码
+      uses: actions/checkout@v4
+
+    - name: 🏗️ 设置Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: 📦 安装Artillery (性能测试工具)
+      run: npm install -g artillery@latest
+
+    - name: 🚀 启动后端服务
+      env:
+        NODE_ENV: test
+        MYSQL_HOST: localhost
+        MYSQL_PASSWORD: test_password
+        REDIS_HOST: localhost
+      run: |
+        npm --prefix backend-app ci
+        npm --prefix backend-app run build
+        npm --prefix backend-app start &
+        sleep 30
+
+    - name: ⚡ 运行性能测试
+      run: |
+        cd backend-app
+        artillery run test/performance/load-test.yml --output performance-report.json
+
+    - name: 📊 生成性能报告
+      run: |
+        cd backend-app
+        artillery report performance-report.json --output performance-report.html
+
+    - name: 📤 上传性能测试报告
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-report
+        path: backend-app/performance-report.html
+
+  # 部署到开发环境
+  deploy-dev:
+    name: 🚀 部署到开发环境
+    runs-on: ubuntu-latest
+    needs: [security-scan, performance-tests]
+    if: github.ref == 'refs/heads/develop'
+    environment: development
+    
+    steps:
+    - name: 📥 检出代码
+      uses: actions/checkout@v4
+
+    - name: ⚙️ 设置kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+
+    - name: 🔐 配置Kubernetes访问
+      run: |
+        mkdir -p $HOME/.kube
+        echo "${{ secrets.KUBE_CONFIG_DEV }}" | base64 -d > $HOME/.kube/config
+
+    - name: 🎯 部署到开发环境
+      run: |
+        # 更新镜像标签
+        sed -i "s|image: emr-backend:latest|image: ${{ needs.build-images.outputs.backend-image }}|g" deployment/k8s/development.yaml
+        sed -i "s|image: emr-frontend:latest|image: ${{ needs.build-images.outputs.frontend-image }}|g" deployment/k8s/development.yaml
+        
+        # 应用配置
+        kubectl apply -f deployment/k8s/development.yaml
+        
+        # 等待部署完成
+        kubectl rollout status deployment/emr-backend -n emr-blockchain-dev --timeout=300s
+        kubectl rollout status deployment/emr-frontend -n emr-blockchain-dev --timeout=300s
+
+    - name: 🧪 运行E2E测试
+      run: |
+        cd react-app
+        npm ci
+        npm run test:e2e
+      env:
+        CYPRESS_BASE_URL: https://dev.emr-blockchain.com
+
+  # 部署到生产环境
+  deploy-prod:
+    name: 🌟 部署到生产环境
+    runs-on: ubuntu-latest
+    needs: [security-scan, performance-tests]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+    - name: 📥 检出代码
+      uses: actions/checkout@v4
+
+    - name: ⚙️ 设置kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+
+    - name: 🔐 配置Kubernetes访问
+      run: |
+        mkdir -p $HOME/.kube
+        echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > $HOME/.kube/config
+
+    - name: 🎯 部署到生产环境
+      run: |
+        # 更新镜像标签
+        sed -i "s|image: emr-backend:latest|image: ${{ needs.build-images.outputs.backend-image }}|g" deployment/k8s/production.yaml
+        sed -i "s|image: emr-frontend:latest|image: ${{ needs.build-images.outputs.frontend-image }}|g" deployment/k8s/production.yaml
+        
+        # 应用配置
+        kubectl apply -f deployment/k8s/production.yaml
+        
+        # 等待部署完成
+        kubectl rollout status deployment/emr-backend -n emr-blockchain-prod --timeout=600s
+        kubectl rollout status deployment/emr-frontend -n emr-blockchain-prod --timeout=600s
+
+    - name: 🔍 部署后健康检查
+      run: |
+        # 检查服务健康状态
+        kubectl get pods -n emr-blockchain-prod
+        kubectl get services -n emr-blockchain-prod
+        
+        # 等待服务就绪
+        kubectl wait --for=condition=ready pod -l app=emr-backend -n emr-blockchain-prod --timeout=300s
+        kubectl wait --for=condition=ready pod -l app=emr-frontend -n emr-blockchain-prod --timeout=300s
+
+    - name: 📊 部署通知
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#deployments'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        message: |
+          🎉 EMR区块链系统已成功部署到生产环境
+          📦 后端镜像: ${{ needs.build-images.outputs.backend-image }}
+          📦 前端镜像: ${{ needs.build-images.outputs.frontend-image }}
+          🔗 应用地址: https://app.emr-blockchain.com
+      if: always()
+
+  # 清理
+  cleanup:
+    name: 🧹 清理资源
+    runs-on: ubuntu-latest
+    needs: [deploy-dev, deploy-prod]
+    if: always()
+    
+    steps:
+    - name: 🗑️ 清理旧的镜像标签
+      run: |
+        # 保留最近10个版本的镜像
+        echo "清理旧的容器镜像..."
+        # 这里可以添加清理逻辑
+
+    - name: 📤 上传构建日志
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-logs
+        path: |
+          *.log
+          reports/
+      if: failure()
+
+# 全局环境变量和安全配置
+env:
+  # 安全扫描配置
+  SECURITY_SCAN_ENABLED: true
+  VULNERABILITY_THRESHOLD: HIGH
+  
+  # 性能测试配置
+  PERFORMANCE_THRESHOLD_RESPONSE_TIME: 2000
+  PERFORMANCE_THRESHOLD_ERROR_RATE: 1
+  
+  # 部署配置
+  DEPLOYMENT_TIMEOUT: 600
+  HEALTH_CHECK_RETRIES: 5

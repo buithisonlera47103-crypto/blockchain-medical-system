@@ -1,0 +1,207 @@
+# Artillery.js 性能测试配置
+config:
+  target: 'https://staging-api.emr-blockchain.com'
+  phases:
+    # 预热阶段
+    - duration: 60
+      arrivalRate: 1
+      name: "Warm up"
+    # 负载递增阶段
+    - duration: 300
+      arrivalRate: 1
+      rampTo: 10
+      name: "Ramp up load"
+    # 稳定负载阶段
+    - duration: 600
+      arrivalRate: 10
+      name: "Sustained load"
+    # 峰值负载阶段
+    - duration: 300
+      arrivalRate: 10
+      rampTo: 50
+      name: "Peak load"
+    # 压力测试阶段
+    - duration: 120
+      arrivalRate: 50
+      rampTo: 100
+      name: "Stress test"
+  
+  # 负载均衡器配置
+  pool: 10
+  
+  # 超时配置
+  timeout: 30
+  
+  # 输出配置
+  ensure:
+    maxErrorRate: 5  # 最大错误率 5%
+    maxLatency: 2000 # 最大响应时间 2秒
+  
+  # 插件配置
+  plugins:
+    expect: {}
+    metrics-by-endpoint: {}
+    
+  # 变量定义
+  variables:
+    doctorToken: ""
+    patientToken: ""
+    testRecordId: ""
+
+# 测试场景
+scenarios:
+  # 用户认证流程测试
+  - name: "Authentication Flow"
+    weight: 20
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            username: "testdoctor"
+            password: "testpassword"
+          capture:
+            - json: "$.data.token"
+              as: "doctorToken"
+          expect:
+            - statusCode: 200
+            - hasProperty: "data.token"
+      
+      - get:
+          url: "/api/auth/verify"
+          headers:
+            Authorization: "Bearer {{ doctorToken }}"
+          expect:
+            - statusCode: 200
+            - hasProperty: "data.valid"
+
+  # 医疗记录CRUD操作测试
+  - name: "Medical Records CRUD"
+    weight: 40
+    flow:
+      # 登录获取token
+      - post:
+          url: "/api/auth/login"
+          json:
+            username: "testdoctor"
+            password: "testpassword"
+          capture:
+            - json: "$.data.token"
+              as: "doctorToken"
+      
+      # 获取记录列表
+      - get:
+          url: "/api/records?page=1&limit=10"
+          headers:
+            Authorization: "Bearer {{ doctorToken }}"
+          expect:
+            - statusCode: 200
+            - hasProperty: "data.records"
+      
+      # 创建新记录 (模拟)
+      - post:
+          url: "/api/records"
+          headers:
+            Authorization: "Bearer {{ doctorToken }}"
+            Content-Type: "multipart/form-data"
+          formData:
+            patientId: "patient_test_001"
+            title: "Performance Test Record {{ $randomString() }}"
+            description: "This is a performance test record"
+            recordType: "examination"
+          capture:
+            - json: "$.data.recordId"
+              as: "testRecordId"
+          expect:
+            - statusCode: 201
+            - hasProperty: "data.recordId"
+      
+      # 获取单个记录
+      - get:
+          url: "/api/records/{{ testRecordId }}"
+          headers:
+            Authorization: "Bearer {{ doctorToken }}"
+          expect:
+            - statusCode: 200
+            - hasProperty: "data.record"
+
+  # 搜索功能测试
+  - name: "Search Performance"
+    weight: 25
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            username: "testdoctor"
+            password: "testpassword"
+          capture:
+            - json: "$.data.token"
+              as: "doctorToken"
+      
+      # 关键词搜索
+      - get:
+          url: "/api/records?keyword=test&page=1&limit=20"
+          headers:
+            Authorization: "Bearer {{ doctorToken }}"
+          expect:
+            - statusCode: 200
+      
+      # 筛选搜索
+      - get:
+          url: "/api/records?recordType=examination&dateFrom=2024-01-01&dateTo=2024-12-31"
+          headers:
+            Authorization: "Bearer {{ doctorToken }}"
+          expect:
+            - statusCode: 200
+
+  # 系统监控端点测试
+  - name: "System Health Check"
+    weight: 10
+    flow:
+      - get:
+          url: "/api/health"
+          expect:
+            - statusCode: 200
+            - hasProperty: "data.status"
+      
+      - get:
+          url: "/api/performance/metrics/realtime"
+          headers:
+            Authorization: "Bearer {{ doctorToken }}"
+          expect:
+            - statusCode: 200
+
+  # 用户管理测试
+  - name: "User Management"
+    weight: 5
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            username: "testadmin"
+            password: "testadminpassword"
+          capture:
+            - json: "$.data.token"
+              as: "adminToken"
+      
+      - get:
+          url: "/api/users/me"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+          expect:
+            - statusCode: 200
+            - hasProperty: "data.user"
+
+# 后置处理
+after:
+  flow:
+    # 清理测试数据
+    - function: "cleanupTestData"
+
+# 自定义函数
+functions:
+  cleanupTestData: |
+    function(context, events, done) {
+      console.log('Cleaning up test data...');
+      // 这里可以添加清理逻辑
+      return done();
+    }

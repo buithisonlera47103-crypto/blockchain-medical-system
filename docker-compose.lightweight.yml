@@ -1,0 +1,127 @@
+# 轻量级Docker Compose配置
+# 专为减少CPU使用率而优化
+
+version: "3.8"
+
+services:
+  # MySQL Database - 优化配置
+  mysql:
+    image: mysql:8.0
+    container_name: blockchain-emr-mysql-light
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-blockchain_emr}
+      MYSQL_USER: ${MYSQL_USER:-emr_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-emr_password}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/init:/docker-entrypoint-initdb.d
+    networks:
+      - blockchain-emr-network
+    command: |
+      --default-authentication-plugin=mysql_native_password
+      --innodb-buffer-pool-size=256M
+      --max-connections=50
+      --query-cache-size=0
+      --query-cache-type=0
+      --slow-query-log=0
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 5
+      interval: 60s  # 降低检查频率
+    deploy:
+      resources:
+        limits:
+          cpus: '0.8'
+          memory: 512M
+        reservations:
+          cpus: '0.2'
+          memory: 256M
+
+  # Redis Cache - 轻量配置
+  redis:
+    image: redis:7-alpine
+    container_name: blockchain-emr-redis-light
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: |
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    networks:
+      - blockchain-emr-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+  # Backend Application - 轻量模式
+  backend:
+    build:
+      context: ./backend-app
+      dockerfile: Dockerfile
+    container_name: blockchain-emr-backend-light
+    restart: unless-stopped
+    env_file:
+      - .env.lightweight
+    environment:
+      - MYSQL_HOST=mysql
+      - REDIS_HOST=redis
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend-app:/app
+      - backend_logs:/app/logs
+    networks:
+      - blockchain-emr-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 120s  # 降低检查频率
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.3'
+          memory: 256M
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  backend_logs:
+    driver: local
+
+networks:
+  blockchain-emr-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

@@ -1,0 +1,764 @@
+# 生产级部署架构 - Kubernetes配置
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: emr-blockchain-prod
+  labels:
+    name: emr-blockchain-prod
+    environment: production
+
+---
+# ConfigMap for application configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: emr-config
+  namespace: emr-blockchain-prod
+data:
+  NODE_ENV: "production"
+  LOG_LEVEL: "info"
+  API_PORT: "3001"
+  FRONTEND_PORT: "3000"
+  MYSQL_HOST: "mysql-service"
+  MYSQL_PORT: "3306"
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  IPFS_API_URL: "http://ipfs-service:5001"
+  FABRIC_PEER_URL: "grpcs://fabric-peer:7051"
+  FABRIC_CA_URL: "https://fabric-ca:7054"
+  MONITORING_ENABLED: "true"
+  PROMETHEUS_PORT: "9090"
+  GRAFANA_PORT: "3001"
+
+---
+# Secret for sensitive data - Use external secret management in production
+apiVersion: v1
+kind: Secret
+metadata:
+  name: emr-secrets
+  namespace: emr-blockchain-prod
+  annotations:
+    # Use external secret management systems in production
+    # external-secrets.io/backend: vault
+    # external-secrets.io/key-name: emr-blockchain-secrets
+    kubernetes.io/description: "EMR Blockchain application secrets - managed externally"
+type: Opaque
+data:
+  # These should be populated by external secret management systems
+  # Never commit actual secrets to version control
+  mysql-root-password: ""  # Populated by external secret manager
+  mysql-user-password: ""  # Populated by external secret manager
+  jwt-secret: ""           # Populated by external secret manager
+  jwt-refresh-secret: ""   # Populated by external secret manager
+  encryption-key: ""       # Populated by external secret manager
+  session-secret: ""       # Populated by external secret manager
+  fabric-admin-key: ""     # Populated by external secret manager
+  blockchain-private-key: "" # Populated by external secret manager
+  redis-password: ""       # Populated by external secret manager
+  api-key-secret: ""       # Populated by external secret manager
+
+---
+# MySQL StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  namespace: emr-blockchain-prod
+spec:
+  serviceName: mysql-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:8.0
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: emr-secrets
+              key: mysql-root-password
+        - name: MYSQL_DATABASE
+          value: emr_blockchain
+        - name: MYSQL_USER
+          value: emr_user
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: emr-secrets
+              key: mysql-user-password
+        ports:
+        - containerPort: 3306
+          name: mysql
+        volumeMounts:
+        - name: mysql-storage
+          mountPath: /var/lib/mysql
+        livenessProbe:
+          exec:
+            command:
+            - mysqladmin
+            - ping
+            - -h
+            - localhost
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - mysqladmin
+            - ping
+            - -h
+            - localhost
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+  volumeClaimTemplates:
+  - metadata:
+      name: mysql-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: "fast-ssd"
+      resources:
+        requests:
+          storage: 100Gi
+
+---
+# MySQL Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-service
+  namespace: emr-blockchain-prod
+spec:
+  selector:
+    app: mysql
+  ports:
+  - port: 3306
+    targetPort: 3306
+  clusterIP: None
+
+---
+# Redis Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: emr-blockchain-prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+        command:
+        - redis-server
+        - --appendonly
+        - "yes"
+        - --maxmemory
+        - "1gb"
+        - --maxmemory-policy
+        - "allkeys-lru"
+        volumeMounts:
+        - name: redis-storage
+          mountPath: /data
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+      volumes:
+      - name: redis-storage
+        persistentVolumeClaim:
+          claimName: redis-pvc
+
+---
+# Redis PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-pvc
+  namespace: emr-blockchain-prod
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: "fast-ssd"
+  resources:
+    requests:
+      storage: 20Gi
+
+---
+# Redis Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: emr-blockchain-prod
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+
+---
+# IPFS Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ipfs
+  namespace: emr-blockchain-prod
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ipfs
+  template:
+    metadata:
+      labels:
+        app: ipfs
+    spec:
+      containers:
+      - name: ipfs
+        image: ipfs/kubo:latest
+        ports:
+        - containerPort: 4001
+          name: swarm
+        - containerPort: 5001
+          name: api
+        - containerPort: 8080
+          name: gateway
+        env:
+        - name: IPFS_PROFILE
+          value: "server"
+        - name: IPFS_PATH
+          value: "/data/ipfs"
+        volumeMounts:
+        - name: ipfs-storage
+          mountPath: /data/ipfs
+        command:
+        - sh
+        - -c
+        - |
+          ipfs init --profile server
+          ipfs config Addresses.API /ip4/0.0.0.0/tcp/5001
+          ipfs config Addresses.Gateway /ip4/0.0.0.0/tcp/8080
+          ipfs config --json API.HTTPHeaders.Access-Control-Allow-Origin '["*"]'
+          ipfs config --json API.HTTPHeaders.Access-Control-Allow-Methods '["PUT", "GET", "POST"]'
+          ipfs daemon
+        livenessProbe:
+          httpGet:
+            path: /api/v0/id
+            port: 5001
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/v0/id
+            port: 5001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+      volumes:
+      - name: ipfs-storage
+        persistentVolumeClaim:
+          claimName: ipfs-pvc
+
+---
+# IPFS PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ipfs-pvc
+  namespace: emr-blockchain-prod
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: "fast-ssd"
+  resources:
+    requests:
+      storage: 500Gi
+
+---
+# IPFS Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: ipfs-service
+  namespace: emr-blockchain-prod
+spec:
+  selector:
+    app: ipfs
+  ports:
+  - name: api
+    port: 5001
+    targetPort: 5001
+  - name: gateway
+    port: 8080
+    targetPort: 8080
+  - name: swarm
+    port: 4001
+    targetPort: 4001
+
+---
+# Backend Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: emr-backend
+  namespace: emr-blockchain-prod
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: emr-backend
+  template:
+    metadata:
+      labels:
+        app: emr-backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3001"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: emr-backend
+        image: emr-backend:latest
+        ports:
+        - containerPort: 3001
+        env:
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config
+              key: NODE_ENV
+        - name: MYSQL_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: emr-config
+              key: MYSQL_HOST
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: emr-secrets
+              key: mysql-user-password
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: emr-secrets
+              key: jwt-secret
+        - name: ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: emr-secrets
+              key: encryption-key
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+
+---
+# Backend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: emr-backend-service
+  namespace: emr-blockchain-prod
+spec:
+  selector:
+    app: emr-backend
+  ports:
+  - port: 3001
+    targetPort: 3001
+  type: ClusterIP
+
+---
+# Frontend Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: emr-frontend
+  namespace: emr-blockchain-prod
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: emr-frontend
+  template:
+    metadata:
+      labels:
+        app: emr-frontend
+    spec:
+      containers:
+      - name: emr-frontend
+        image: emr-frontend:latest
+        ports:
+        - containerPort: 80
+        env:
+        - name: REACT_APP_API_URL
+          value: "https://api.emr-blockchain.com"
+        - name: REACT_APP_ENVIRONMENT
+          value: "production"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 101
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+
+---
+# Frontend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: emr-frontend-service
+  namespace: emr-blockchain-prod
+spec:
+  selector:
+    app: emr-frontend
+  ports:
+  - port: 80
+    targetPort: 80
+  type: ClusterIP
+
+---
+# Fabric Peer Deployment
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fabric-peer
+  namespace: emr-blockchain-prod
+spec:
+  serviceName: fabric-peer-service
+  replicas: 2
+  selector:
+    matchLabels:
+      app: fabric-peer
+  template:
+    metadata:
+      labels:
+        app: fabric-peer
+    spec:
+      containers:
+      - name: fabric-peer
+        image: hyperledger/fabric-peer:2.5
+        env:
+        - name: CORE_PEER_ID
+          value: "peer0.org1.example.com"
+        - name: CORE_PEER_ADDRESS
+          value: "peer0.org1.example.com:7051"
+        - name: CORE_PEER_LISTENADDRESS
+          value: "0.0.0.0:7051"
+        - name: CORE_PEER_CHAINCODEADDRESS
+          value: "peer0.org1.example.com:7052"
+        - name: CORE_PEER_CHAINCODELISTENADDRESS
+          value: "0.0.0.0:7052"
+        - name: CORE_PEER_GOSSIP_BOOTSTRAP
+          value: "peer0.org1.example.com:7051"
+        - name: CORE_PEER_GOSSIP_EXTERNALENDPOINT
+          value: "peer0.org1.example.com:7051"
+        - name: CORE_PEER_LOCALMSPID
+          value: "Org1MSP"
+        - name: CORE_VM_ENDPOINT
+          value: "unix:///host/var/run/docker.sock"
+        - name: CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE
+          value: "fabric_test"
+        - name: FABRIC_LOGGING_SPEC
+          value: "INFO"
+        - name: CORE_PEER_TLS_ENABLED
+          value: "true"
+        - name: CORE_PEER_TLS_CERT_FILE
+          value: "/etc/hyperledger/fabric/tls/server.crt"
+        - name: CORE_PEER_TLS_KEY_FILE
+          value: "/etc/hyperledger/fabric/tls/server.key"
+        - name: CORE_PEER_TLS_ROOTCERT_FILE
+          value: "/etc/hyperledger/fabric/tls/ca.crt"
+        ports:
+        - containerPort: 7051
+        - containerPort: 7052
+        volumeMounts:
+        - name: peer-storage
+          mountPath: /var/hyperledger/production
+        - name: docker-socket
+          mountPath: /host/var/run/docker.sock
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+      volumes:
+      - name: docker-socket
+        hostPath:
+          path: /var/run/docker.sock
+  volumeClaimTemplates:
+  - metadata:
+      name: peer-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: "fast-ssd"
+      resources:
+        requests:
+          storage: 50Gi
+
+---
+# Fabric Peer Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: fabric-peer-service
+  namespace: emr-blockchain-prod
+spec:
+  selector:
+    app: fabric-peer
+  ports:
+  - name: peer
+    port: 7051
+    targetPort: 7051
+  - name: chaincode
+    port: 7052
+    targetPort: 7052
+  clusterIP: None
+
+---
+# Ingress Controller
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: emr-ingress
+  namespace: emr-blockchain-prod
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://app.emr-blockchain.com"
+spec:
+  tls:
+  - hosts:
+    - app.emr-blockchain.com
+    - api.emr-blockchain.com
+    secretName: emr-tls-secret
+  rules:
+  - host: app.emr-blockchain.com
+    http:
+      paths:
+      - path: /(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: emr-frontend-service
+            port:
+              number: 80
+  - host: api.emr-blockchain.com
+    http:
+      paths:
+      - path: /(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: emr-backend-service
+            port:
+              number: 3001
+
+---
+# Horizontal Pod Autoscaler for Backend
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: emr-backend-hpa
+  namespace: emr-blockchain-prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: emr-backend
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+
+---
+# Pod Disruption Budget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: emr-backend-pdb
+  namespace: emr-blockchain-prod
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: emr-backend
+
+---
+# Network Policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: emr-network-policy
+  namespace: emr-blockchain-prod
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - podSelector: {}
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+  - to:
+    - podSelector: {}
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 443
+
+---
+# ServiceMonitor for Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: emr-backend-monitor
+  namespace: emr-blockchain-prod
+  labels:
+    app: emr-backend
+spec:
+  selector:
+    matchLabels:
+      app: emr-backend
+  endpoints:
+  - port: api
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s

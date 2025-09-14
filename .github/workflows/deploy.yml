@@ -1,0 +1,470 @@
+name: EMR区块链系统 CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME_BACKEND: ${{ github.repository }}-backend
+  IMAGE_NAME_FRONTEND: ${{ github.repository }}-frontend
+  KUBERNETES_NAMESPACE: emr-namespace
+
+jobs:
+  # 代码质量检查
+  lint-and-test:
+    name: 代码检查和测试
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+          cache-dependency-path: |
+            backend-app/package-lock.json
+            react-app/package-lock.json
+
+      - name: 安装后端依赖
+        working-directory: ./backend-app
+        run: npm ci
+
+      - name: 安装前端依赖
+        working-directory: ./react-app
+        run: npm ci
+
+      - name: 后端代码检查
+        working-directory: ./backend-app
+        run: |
+          npm run lint
+          npm run type-check
+
+      - name: 前端代码检查
+        working-directory: ./react-app
+        run: |
+          npm run lint
+          npm run type-check
+
+      - name: 后端单元测试
+        working-directory: ./backend-app
+        run: npm run test:unit
+        env:
+          NODE_ENV: test
+
+      - name: 前端单元测试
+        working-directory: ./react-app
+        run: npm run test -- --coverage --watchAll=false
+
+      - name: 上传测试覆盖率
+        uses: codecov/codecov-action@v3
+        with:
+          files: |
+            ./backend-app/coverage/lcov.info
+            ./react-app/coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+
+  # 安全扫描
+  security-scan:
+    name: 安全扫描
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 运行Trivy漏洞扫描
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy-results.sarif"
+
+      - name: 上传Trivy扫描结果
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: "trivy-results.sarif"
+
+      - name: npm audit 后端
+        working-directory: ./backend-app
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: npm audit 前端
+        working-directory: ./react-app
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+  # 构建Docker镜像
+  build-images:
+    name: 构建Docker镜像
+    runs-on: ubuntu-latest
+    needs: [lint-and-test, security-scan]
+    if: github.event_name != 'pull_request'
+
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      backend-image: ${{ steps.meta-backend.outputs.tags }}
+      frontend-image: ${{ steps.meta-frontend.outputs.tags }}
+      backend-digest: ${{ steps.build-backend.outputs.digest }}
+      frontend-digest: ${{ steps.build-frontend.outputs.digest }}
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录容器注册表
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 提取后端镜像元数据
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: 提取前端镜像元数据
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: 构建并推送后端镜像
+        id: build-backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./deployment/docker/Dockerfile.backend
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      - name: 构建并推送前端镜像
+        id: build-frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./deployment/docker/Dockerfile.frontend
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      - name: 镜像安全扫描
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.meta-backend.outputs.tags }}
+          format: "sarif"
+          output: "backend-trivy-results.sarif"
+
+      - name: 上传镜像扫描结果
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: "backend-trivy-results.sarif"
+
+  # 集成测试
+  integration-test:
+    name: 集成测试
+    runs-on: ubuntu-latest
+    needs: build-images
+    if: github.event_name != 'pull_request'
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: emr_blockchain_test
+          MYSQL_USER: emr_user
+          MYSQL_PASSWORD: password
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+      ipfs:
+        image: ipfs/kubo:latest
+        ports:
+          - 5001:5001
+          - 8080:8080
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: backend-app/package-lock.json
+
+      - name: 安装依赖
+        working-directory: ./backend-app
+        run: npm ci
+
+      - name: 等待服务就绪
+        run: |
+          timeout 60 bash -c 'until curl -f http://localhost:5001/api/v0/version; do sleep 2; done'
+          timeout 60 bash -c 'until mysqladmin ping -h localhost -u root -ppassword; do sleep 2; done'
+
+      - name: 初始化数据库
+        working-directory: ./backend-app
+        run: |
+          mysql -h localhost -u root -ppassword emr_blockchain_test < ../deployment/docker/init.sql
+
+      - name: 运行集成测试
+        working-directory: ./backend-app
+        run: npm run test:integration
+        env:
+          NODE_ENV: test
+          MYSQL_URL: mysql://emr_user:password@localhost:3306/emr_blockchain_test
+          REDIS_URL: redis://localhost:6379
+          IPFS_URL: http://localhost:5001
+          JWT_SECRET: test-secret
+
+  # 部署到测试环境
+  deploy-staging:
+    name: 部署到测试环境
+    runs-on: ubuntu-latest
+    needs: [build-images, integration-test]
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: staging
+      url: https://staging.emr.example.com
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: "v1.28.0"
+
+      - name: 配置Kubernetes上下文
+        run: |
+          echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > kubeconfig
+          export KUBECONFIG=kubeconfig
+          kubectl config current-context
+
+      - name: 更新镜像标签
+        run: |
+          export KUBECONFIG=kubeconfig
+          kubectl set image deployment/backend-deployment backend=${{ needs.build-images.outputs.backend-image }} -n ${{ env.KUBERNETES_NAMESPACE }}-staging
+          kubectl set image deployment/frontend-deployment frontend=${{ needs.build-images.outputs.frontend-image }} -n ${{ env.KUBERNETES_NAMESPACE }}-staging
+
+      - name: 等待部署完成
+        run: |
+          export KUBECONFIG=kubeconfig
+          kubectl rollout status deployment/backend-deployment -n ${{ env.KUBERNETES_NAMESPACE }}-staging --timeout=600s
+          kubectl rollout status deployment/frontend-deployment -n ${{ env.KUBERNETES_NAMESPACE }}-staging --timeout=600s
+
+      - name: 运行健康检查
+        run: |
+          cd deployment/scripts
+          node healthcheck.js --url https://staging.emr.example.com
+
+  # 部署到生产环境
+  deploy-production:
+    name: 部署到生产环境
+    runs-on: ubuntu-latest
+    needs: [build-images, integration-test]
+    if: github.event_name == 'release' && github.event.action == 'published'
+    environment:
+      name: production
+      url: https://emr.example.com
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: "v1.28.0"
+
+      - name: 配置Kubernetes上下文
+        run: |
+          echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > kubeconfig
+          export KUBECONFIG=kubeconfig
+          kubectl config current-context
+
+      - name: 创建部署备份
+        run: |
+          export KUBECONFIG=kubeconfig
+          kubectl get deployment backend-deployment -n ${{ env.KUBERNETES_NAMESPACE }} -o yaml > backup-backend-deployment.yaml
+          kubectl get deployment frontend-deployment -n ${{ env.KUBERNETES_NAMESPACE }} -o yaml > backup-frontend-deployment.yaml
+
+      - name: 蓝绿部署 - 创建新版本
+        run: |
+          export KUBECONFIG=kubeconfig
+          # 创建新的deployment副本
+          sed 's/backend-deployment/backend-deployment-new/g' backup-backend-deployment.yaml | kubectl apply -f -
+          sed 's/frontend-deployment/frontend-deployment-new/g' backup-frontend-deployment.yaml | kubectl apply -f -
+
+          # 更新镜像
+          kubectl set image deployment/backend-deployment-new backend=${{ needs.build-images.outputs.backend-image }} -n ${{ env.KUBERNETES_NAMESPACE }}
+          kubectl set image deployment/frontend-deployment-new frontend=${{ needs.build-images.outputs.frontend-image }} -n ${{ env.KUBERNETES_NAMESPACE }}
+
+      - name: 等待新版本就绪
+        run: |
+          export KUBECONFIG=kubeconfig
+          kubectl rollout status deployment/backend-deployment-new -n ${{ env.KUBERNETES_NAMESPACE }} --timeout=600s
+          kubectl rollout status deployment/frontend-deployment-new -n ${{ env.KUBERNETES_NAMESPACE }} --timeout=600s
+
+      - name: 健康检查新版本
+        run: |
+          cd deployment/scripts
+          # 临时切换流量到新版本进行测试
+          export KUBECONFIG=../../kubeconfig
+          kubectl patch service backend-service -n ${{ env.KUBERNETES_NAMESPACE }} -p '{"spec":{"selector":{"app":"backend-new"}}}'
+          kubectl patch service frontend-service -n ${{ env.KUBERNETES_NAMESPACE }} -p '{"spec":{"selector":{"app":"frontend-new"}}}'
+
+          # 运行健康检查
+          sleep 30
+          node healthcheck.js --url https://emr.example.com
+
+      - name: 切换到新版本
+        run: |
+          export KUBECONFIG=kubeconfig
+          # 删除旧版本
+          kubectl delete deployment backend-deployment -n ${{ env.KUBERNETES_NAMESPACE }}
+          kubectl delete deployment frontend-deployment -n ${{ env.KUBERNETES_NAMESPACE }}
+
+          # 重命名新版本
+          kubectl patch deployment backend-deployment-new -n ${{ env.KUBERNETES_NAMESPACE }} -p '{"metadata":{"name":"backend-deployment"}}'
+          kubectl patch deployment frontend-deployment-new -n ${{ env.KUBERNETES_NAMESPACE }} -p '{"metadata":{"name":"frontend-deployment"}}'
+
+          # 恢复服务选择器
+          kubectl patch service backend-service -n ${{ env.KUBERNETES_NAMESPACE }} -p '{"spec":{"selector":{"app":"backend"}}}'
+          kubectl patch service frontend-service -n ${{ env.KUBERNETES_NAMESPACE }} -p '{"spec":{"selector":{"app":"frontend"}}}'
+
+      - name: 最终健康检查
+        run: |
+          cd deployment/scripts
+          sleep 30
+          node healthcheck.js --url https://emr.example.com
+
+      - name: 通知部署成功
+        if: success()
+        run: |
+          echo "🎉 生产环境部署成功！"
+          echo "版本: ${{ github.event.release.tag_name }}"
+          echo "访问地址: https://emr.example.com"
+
+      - name: 回滚部署
+        if: failure()
+        run: |
+          export KUBECONFIG=kubeconfig
+          echo "❌ 部署失败，正在回滚..."
+          kubectl apply -f backup-backend-deployment.yaml
+          kubectl apply -f backup-frontend-deployment.yaml
+          kubectl delete deployment backend-deployment-new frontend-deployment-new -n ${{ env.KUBERNETES_NAMESPACE }} --ignore-not-found
+
+  # 性能测试
+  performance-test:
+    name: 性能测试
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/develop'
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 安装k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: 运行负载测试
+        run: |
+          k6 run --out json=performance-results.json deployment/tests/load-test.js
+
+      - name: 上传性能测试结果
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-results
+          path: performance-results.json
+
+  # 清理旧镜像
+  cleanup:
+    name: 清理旧镜像
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: always() && github.event_name == 'release'
+
+    steps:
+      - name: 清理旧的容器镜像
+        uses: actions/delete-package-versions@v4
+        with:
+          package-name: ${{ env.IMAGE_NAME_BACKEND }}
+          package-type: container
+          min-versions-to-keep: 5
+          delete-only-untagged-versions: true
+
+      - name: 清理旧的前端镜像
+        uses: actions/delete-package-versions@v4
+        with:
+          package-name: ${{ env.IMAGE_NAME_FRONTEND }}
+          package-type: container
+          min-versions-to-keep: 5
+          delete-only-untagged-versions: true

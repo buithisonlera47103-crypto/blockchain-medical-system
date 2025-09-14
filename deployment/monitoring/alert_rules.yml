@@ -1,0 +1,385 @@
+# Prometheus告警规则
+# EMR区块链系统告警配置
+
+groups:
+  # 系统级别告警
+  - name: system.rules
+    interval: 30s
+    rules:
+      # 高CPU使用率
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "高CPU使用率告警"
+          description: "实例 {{ $labels.instance }} CPU使用率超过80%，当前值: {{ $value }}%"
+
+      # 高内存使用率
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "高内存使用率告警"
+          description: "实例 {{ $labels.instance }} 内存使用率超过85%，当前值: {{ $value }}%"
+
+      # 磁盘空间不足
+      - alert: DiskSpaceLow
+        expr: (1 - (node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"})) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+          category: system
+        annotations:
+          summary: "磁盘空间不足告警"
+          description: "实例 {{ $labels.instance }} 磁盘 {{ $labels.mountpoint }} 使用率超过90%，当前值: {{ $value }}%"
+
+      # 磁盘IO高负载
+      - alert: HighDiskIO
+        expr: irate(node_disk_io_time_seconds_total[5m]) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "磁盘IO高负载告警"
+          description: "实例 {{ $labels.instance }} 磁盘IO使用率超过80%，当前值: {{ $value }}%"
+
+      # 网络连接数过高
+      - alert: HighNetworkConnections
+        expr: node_netstat_Tcp_CurrEstab > 1000
+        for: 5m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "网络连接数过高告警"
+          description: "实例 {{ $labels.instance }} TCP连接数超过1000，当前值: {{ $value }}"
+
+  # 应用级别告警
+  - name: application.rules
+    interval: 30s
+    rules:
+      # 服务不可用
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: application
+        annotations:
+          summary: "服务不可用告警"
+          description: "服务 {{ $labels.job }} 实例 {{ $labels.instance }} 已下线"
+
+      # HTTP错误率过高
+      - alert: HighHTTPErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m])) by (service)
+            /
+            sum(rate(http_requests_total[5m])) by (service)
+          ) * 100 > 5
+        for: 5m
+        labels:
+          severity: critical
+          category: application
+        annotations:
+          summary: "HTTP错误率过高告警"
+          description: "服务 {{ $labels.service }} HTTP 5xx错误率超过5%，当前值: {{ $value }}%"
+
+      # 响应时间过长
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)) > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: application
+        annotations:
+          summary: "响应时间过长告警"
+          description: "服务 {{ $labels.service }} 95%响应时间超过2秒，当前值: {{ $value }}秒"
+
+      # 请求量异常下降
+      - alert: LowRequestRate
+        expr: sum(rate(http_requests_total[5m])) by (service) < 1
+        for: 10m
+        labels:
+          severity: warning
+          category: application
+        annotations:
+          summary: "请求量异常下降告警"
+          description: "服务 {{ $labels.service }} 请求量异常下降，当前值: {{ $value }} req/s"
+
+      # Pod重启频繁
+      - alert: PodRestartingFrequently
+        expr: increase(kube_pod_container_status_restarts_total[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+          category: kubernetes
+        annotations:
+          summary: "Pod重启频繁告警"
+          description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} 在过去1小时内重启超过3次"
+
+      # Pod内存使用率过高
+      - alert: PodHighMemoryUsage
+        expr: |
+          (
+            container_memory_working_set_bytes{container!="POD",container!=""}
+            /
+            container_spec_memory_limit_bytes{container!="POD",container!=""}
+          ) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          category: kubernetes
+        annotations:
+          summary: "Pod内存使用率过高告警"
+          description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} 容器 {{ $labels.container }} 内存使用率超过90%"
+
+  # 数据库告警
+  - name: database.rules
+    interval: 30s
+    rules:
+      # MySQL连接数过高
+      - alert: MySQLHighConnections
+        expr: mysql_global_status_threads_connected / mysql_global_variables_max_connections * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "MySQL连接数过高告警"
+          description: "MySQL连接数使用率超过80%，当前值: {{ $value }}%"
+
+      # MySQL慢查询增加
+      - alert: MySQLSlowQueries
+        expr: increase(mysql_global_status_slow_queries[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "MySQL慢查询增加告警"
+          description: "MySQL在过去5分钟内慢查询增加了 {{ $value }} 个"
+
+      # MySQL复制延迟
+      - alert: MySQLReplicationLag
+        expr: mysql_slave_lag_seconds > 30
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "MySQL复制延迟告警"
+          description: "MySQL从库复制延迟超过30秒，当前值: {{ $value }}秒"
+
+      # MySQL不可用
+      - alert: MySQLDown
+        expr: mysql_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: database
+        annotations:
+          summary: "MySQL数据库不可用告警"
+          description: "MySQL数据库实例 {{ $labels.instance }} 不可用"
+
+  # Redis告警
+  - name: redis.rules
+    interval: 30s
+    rules:
+      # Redis内存使用率过高
+      - alert: RedisHighMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          category: redis
+        annotations:
+          summary: "Redis内存使用率过高告警"
+          description: "Redis实例 {{ $labels.instance }} 内存使用率超过90%，当前值: {{ $value }}%"
+
+      # Redis连接数过高
+      - alert: RedisHighConnections
+        expr: redis_connected_clients > 100
+        for: 5m
+        labels:
+          severity: warning
+          category: redis
+        annotations:
+          summary: "Redis连接数过高告警"
+          description: "Redis实例 {{ $labels.instance }} 连接数超过100，当前值: {{ $value }}"
+
+      # Redis不可用
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: redis
+        annotations:
+          summary: "Redis不可用告警"
+          description: "Redis实例 {{ $labels.instance }} 不可用"
+
+  # IPFS告警
+  - name: ipfs.rules
+    interval: 30s
+    rules:
+      # IPFS节点不可用
+      - alert: IPFSNodeDown
+        expr: up{job="ipfs-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: ipfs
+        annotations:
+          summary: "IPFS节点不可用告警"
+          description: "IPFS节点 {{ $labels.instance }} 不可用"
+
+      # IPFS存储空间不足
+      - alert: IPFSStorageLow
+        expr: ipfs_repo_size_bytes / ipfs_repo_size_limit_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: ipfs
+        annotations:
+          summary: "IPFS存储空间不足告警"
+          description: "IPFS节点 {{ $labels.instance }} 存储使用率超过85%，当前值: {{ $value }}%"
+
+      # IPFS对等节点数量过低
+      - alert: IPFSLowPeerCount
+        expr: ipfs_peers < 5
+        for: 10m
+        labels:
+          severity: warning
+          category: ipfs
+        annotations:
+          summary: "IPFS对等节点数量过低告警"
+          description: "IPFS节点 {{ $labels.instance }} 对等节点数量过低，当前值: {{ $value }}"
+
+  # 区块链告警
+  - name: blockchain.rules
+    interval: 60s
+    rules:
+      # 区块链网络连接异常
+      - alert: BlockchainNetworkIssue
+        expr: fabric_peer_connections < 2
+        for: 5m
+        labels:
+          severity: critical
+          category: blockchain
+        annotations:
+          summary: "区块链网络连接异常告警"
+          description: "Fabric节点 {{ $labels.instance }} 连接数过低，当前值: {{ $value }}"
+
+      # 交易处理延迟
+      - alert: BlockchainTransactionDelay
+        expr: fabric_transaction_duration_seconds > 10
+        for: 5m
+        labels:
+          severity: warning
+          category: blockchain
+        annotations:
+          summary: "区块链交易处理延迟告警"
+          description: "区块链交易处理时间超过10秒，当前值: {{ $value }}秒"
+
+      # 区块生成异常
+      - alert: BlockchainBlockGenerationIssue
+        expr: increase(fabric_blocks_total[10m]) == 0
+        for: 10m
+        labels:
+          severity: critical
+          category: blockchain
+        annotations:
+          summary: "区块链区块生成异常告警"
+          description: "过去10分钟内没有新区块生成"
+
+  # 安全告警
+  - name: security.rules
+    interval: 30s
+    rules:
+      # 异常登录尝试
+      - alert: HighFailedLoginAttempts
+        expr: increase(emr_failed_login_attempts_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "异常登录尝试告警"
+          description: "过去5分钟内失败登录尝试超过10次，来源: {{ $labels.source_ip }}"
+
+      # SSL证书即将过期
+      - alert: SSLCertificateExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry - time() < 7 * 24 * 3600
+        for: 1h
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "SSL证书即将过期告警"
+          description: "域名 {{ $labels.instance }} 的SSL证书将在7天内过期"
+
+      # 异常API调用
+      - alert: UnusualAPIUsage
+        expr: |
+          (
+            sum(rate(http_requests_total[5m])) by (instance)
+            /
+            avg_over_time(sum(rate(http_requests_total[5m])) by (instance)[1h:5m])
+          ) > 3
+        for: 10m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "异常API调用告警"
+          description: "实例 {{ $labels.instance }} API调用量异常，是平均值的 {{ $value }} 倍"
+
+  # 业务告警
+  - name: business.rules
+    interval: 60s
+    rules:
+      # 医疗记录创建失败率过高
+      - alert: HighMedicalRecordCreationFailureRate
+        expr: |
+          (
+            sum(rate(emr_medical_record_creation_failures_total[5m]))
+            /
+            sum(rate(emr_medical_record_creation_attempts_total[5m]))
+          ) * 100 > 10
+        for: 5m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "医疗记录创建失败率过高告警"
+          description: "医疗记录创建失败率超过10%，当前值: {{ $value }}%"
+
+      # 用户注册异常
+      - alert: UnusualUserRegistration
+        expr: increase(emr_user_registrations_total[1h]) > 100
+        for: 5m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "用户注册异常告警"
+          description: "过去1小时内用户注册数量异常，当前值: {{ $value }}"
+
+      # 数据同步延迟
+      - alert: DataSyncDelay
+        expr: time() - emr_last_sync_timestamp > 300
+        for: 5m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "数据同步延迟告警"
+          description: "数据同步延迟超过5分钟，延迟时间: {{ $value }}秒"

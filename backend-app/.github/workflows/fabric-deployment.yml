@@ -1,0 +1,494 @@
+name: Hyperledger Fabric 网络部署
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "src/deploy/**"
+      - "src/services/FabricOptimizationService.ts"
+      - "deployment/k8s/**"
+      - ".github/workflows/fabric-deployment.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/deploy/**"
+      - "src/services/FabricOptimizationService.ts"
+      - "deployment/k8s/**"
+  workflow_dispatch:
+    inputs:
+      organization:
+        description: "部署组织 (org1/org2)"
+        required: true
+        default: "org1"
+        type: choice
+        options:
+          - org1
+          - org2
+      action:
+        description: "部署操作 (deploy/upgrade)"
+        required: true
+        default: "deploy"
+        type: choice
+        options:
+          - deploy
+          - upgrade
+      environment:
+        description: "部署环境"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  NODE_VERSION: "18"
+  KUBERNETES_VERSION: "v1.28.0"
+  FABRIC_VERSION: "2.5"
+
+jobs:
+  # 代码质量检查
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 代码格式检查
+        run: npm run lint
+
+      - name: TypeScript 类型检查
+        run: npm run build
+
+      - name: 安全漏洞扫描
+        run: npm audit --audit-level=moderate
+
+  # 单元测试
+  unit-tests:
+    runs-on: ubuntu-latest
+    needs: code-quality
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 运行单元测试
+        run: npm test -- --coverage
+        env:
+          NODE_ENV: test
+          FABRIC_CHANNEL_NAME: testchannel
+          FABRIC_CHAINCODE_NAME: testchaincode
+          ORG1_PEER_URL: grpcs://localhost:7051
+          ORG2_PEER_URL: grpcs://localhost:9051
+          ORDERER_URL: grpc://localhost:7050
+
+      - name: 上传测试覆盖率
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+
+  # Fabric 网络测试
+  fabric-network-test:
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    services:
+      # 模拟 Fabric 网络组件
+      fabric-orderer:
+        image: hyperledger/fabric-orderer:2.5
+        ports:
+          - 7050:7050
+        env:
+          FABRIC_LOGGING_SPEC: INFO
+          ORDERER_GENERAL_LISTENADDRESS: 0.0.0.0
+          ORDERER_GENERAL_LISTENPORT: 7050
+          ORDERER_GENERAL_GENESISMETHOD: file
+          ORDERER_GENERAL_GENESISFILE: /var/hyperledger/orderer/orderer.genesis.block
+          ORDERER_GENERAL_LOCALMSPID: OrdererMSP
+          ORDERER_GENERAL_LOCALMSPDIR: /var/hyperledger/orderer/msp
+
+      fabric-peer-org1:
+        image: hyperledger/fabric-peer:2.5
+        ports:
+          - 7051:7051
+        env:
+          CORE_PEER_ID: peer0.org1.example.com
+          CORE_PEER_ADDRESS: peer0.org1.example.com:7051
+          CORE_PEER_LISTENADDRESS: 0.0.0.0:7051
+          CORE_PEER_CHAINCODEADDRESS: peer0.org1.example.com:7052
+          CORE_PEER_CHAINCODELISTENADDRESS: 0.0.0.0:7052
+          CORE_PEER_GOSSIP_BOOTSTRAP: peer0.org1.example.com:7051
+          CORE_PEER_GOSSIP_EXTERNALENDPOINT: peer0.org1.example.com:7051
+          CORE_PEER_LOCALMSPID: Org1MSP
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 等待 Fabric 网络启动
+        run: |
+          echo "等待 Fabric 网络组件启动..."
+          sleep 30
+
+          # 检查 Orderer 健康状态
+          timeout 60 bash -c 'until nc -z localhost 7050; do sleep 1; done'
+          echo "Orderer 已启动"
+
+          # 检查 Peer 健康状态
+          timeout 60 bash -c 'until nc -z localhost 7051; do sleep 1; done'
+          echo "Peer Org1 已启动"
+
+      - name: 运行 Fabric 集成测试
+        run: npm run test:integration
+        env:
+          NODE_ENV: test
+          FABRIC_CHANNEL_NAME: testchannel
+          FABRIC_CHAINCODE_NAME: testchaincode
+          ORG1_PEER_URL: grpcs://localhost:7051
+          ORG2_PEER_URL: grpcs://localhost:9051
+          ORDERER_URL: grpc://localhost:7050
+          FABRIC_CA_URL: http://localhost:7054
+
+  # Kubernetes 配置验证
+  k8s-validation:
+    runs-on: ubuntu-latest
+    needs: code-quality
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Kubernetes 工具
+        uses: azure/setup-kubectl@v3
+        with:
+          version: ${{ env.KUBERNETES_VERSION }}
+
+      - name: 安装 kubeval
+        run: |
+          wget https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz
+          tar xf kubeval-linux-amd64.tar.gz
+          sudo mv kubeval /usr/local/bin
+
+      - name: 验证 Kubernetes 配置
+        run: |
+          echo "验证 Fabric 部署配置..."
+          kubeval deployment/k8s/fabric-deployment.yaml
+
+          echo "验证配置语法..."
+          kubectl apply --dry-run=client -f deployment/k8s/fabric-deployment.yaml
+
+      - name: 安全策略检查
+        run: |
+          echo "检查 Kubernetes 安全配置..."
+          # 检查是否使用了 privileged 容器
+          if grep -q "privileged: true" deployment/k8s/fabric-deployment.yaml; then
+            echo "警告: 发现 privileged 容器配置"
+            exit 1
+          fi
+
+          # 检查是否设置了资源限制
+          if ! grep -q "resources:" deployment/k8s/fabric-deployment.yaml; then
+            echo "警告: 未设置资源限制"
+            exit 1
+          fi
+
+  # 构建和推送 Docker 镜像
+  build-image:
+    runs-on: ubuntu-latest
+    needs: [unit-tests, k8s-validation]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录到容器注册表
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.CONTAINER_REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: 提取元数据
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.CONTAINER_REGISTRY }}/blockchain-emr-backend
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: 构建和推送镜像
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Staging 环境部署
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: [fabric-network-test, build-image]
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment:
+      name: staging
+      url: https://staging.blockchain-emr.example.com
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Kubernetes 配置
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: 设置 kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: ${{ env.KUBERNETES_VERSION }}
+
+      - name: 部署到 Staging
+        run: |
+          echo "部署 Fabric 网络到 Staging 环境..."
+
+          # 更新镜像标签
+          sed -i "s|image: blockchain-emr-backend:latest|image: ${{ needs.build-image.outputs.image-tag }}|g" deployment/k8s/fabric-deployment.yaml
+
+          # 应用配置
+          kubectl apply -f deployment/k8s/fabric-deployment.yaml -n fabric-staging
+
+          # 等待部署完成
+          kubectl rollout status deployment/fabric-orderer -n fabric-staging --timeout=300s
+          kubectl rollout status deployment/fabric-peer-org1 -n fabric-staging --timeout=300s
+          kubectl rollout status deployment/fabric-peer-org2 -n fabric-staging --timeout=300s
+
+      - name: 运行部署后测试
+        run: |
+          echo "运行部署后验证测试..."
+
+          # 检查 Pod 状态
+          kubectl get pods -n fabric-staging
+
+          # 检查服务状态
+          kubectl get services -n fabric-staging
+
+          # 运行健康检查
+          kubectl exec -n fabric-staging deployment/fabric-peer-org1 -- peer version
+
+  # Production 环境部署
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, build-image]
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment:
+      name: production
+      url: https://blockchain-emr.example.com
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Kubernetes 配置
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: 设置 kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: ${{ env.KUBERNETES_VERSION }}
+
+      - name: 生产环境预检查
+        run: |
+          echo "执行生产环境预检查..."
+
+          # 检查集群资源
+          kubectl top nodes
+          kubectl get nodes
+
+          # 检查命名空间
+          kubectl get namespace fabric-network || kubectl create namespace fabric-network
+
+      - name: 部署到 Production
+        run: |
+          echo "部署 Fabric 网络到 Production 环境..."
+
+          # 更新镜像标签
+          sed -i "s|image: blockchain-emr-backend:latest|image: ${{ needs.build-image.outputs.image-tag }}|g" deployment/k8s/fabric-deployment.yaml
+
+          # 应用配置
+          kubectl apply -f deployment/k8s/fabric-deployment.yaml -n fabric-network
+
+          # 等待部署完成
+          kubectl rollout status deployment/fabric-orderer -n fabric-network --timeout=600s
+          kubectl rollout status deployment/fabric-peer-org1 -n fabric-network --timeout=600s
+          kubectl rollout status deployment/fabric-peer-org2 -n fabric-network --timeout=600s
+          kubectl rollout status deployment/fabric-ca-org1 -n fabric-network --timeout=300s
+          kubectl rollout status deployment/fabric-ca-org2 -n fabric-network --timeout=300s
+
+      - name: 生产环境验证
+        run: |
+          echo "验证生产环境部署..."
+
+          # 检查所有 Pod 状态
+          kubectl get pods -n fabric-network -o wide
+
+          # 检查服务状态
+          kubectl get services -n fabric-network
+
+          # 检查 PVC 状态
+          kubectl get pvc -n fabric-network
+
+          # 运行 Fabric 网络健康检查
+          kubectl exec -n fabric-network deployment/fabric-peer-org1 -- peer channel list
+          kubectl exec -n fabric-network deployment/fabric-peer-org2 -- peer channel list
+
+      - name: 发送部署通知
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: "#blockchain-deployments"
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+
+  # 手动部署特定组织
+  manual-deploy:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    environment:
+      name: ${{ github.event.inputs.environment }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建项目
+        run: npm run build
+
+      - name: 执行 Fabric 部署
+        run: |
+          echo "执行 ${{ github.event.inputs.action }} 操作到组织 ${{ github.event.inputs.organization }}"
+
+          # 设置环境变量
+          export NODE_ENV=${{ github.event.inputs.environment }}
+          export FABRIC_ORG=${{ github.event.inputs.organization }}
+          export FABRIC_ACTION=${{ github.event.inputs.action }}
+
+          # 运行部署脚本
+          npm run fabric:deploy -- --org=${{ github.event.inputs.organization }} --action=${{ github.event.inputs.action }}
+        env:
+          FABRIC_CHANNEL_NAME: ${{ secrets.FABRIC_CHANNEL_NAME }}
+          FABRIC_CHAINCODE_NAME: ${{ secrets.FABRIC_CHAINCODE_NAME }}
+          ORG1_PEER_URL: ${{ secrets.ORG1_PEER_URL }}
+          ORG2_PEER_URL: ${{ secrets.ORG2_PEER_URL }}
+          ORDERER_URL: ${{ secrets.ORDERER_URL }}
+          ORG1_CA_URL: ${{ secrets.ORG1_CA_URL }}
+          ORG2_CA_URL: ${{ secrets.ORG2_CA_URL }}
+
+      - name: 生成部署报告
+        run: |
+          echo "生成部署报告..."
+
+          # 创建部署报告
+          cat > deployment-report.json << EOF
+          {
+            "deploymentId": "${{ github.run_id }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "organization": "${{ github.event.inputs.organization }}",
+            "action": "${{ github.event.inputs.action }}",
+            "environment": "${{ github.event.inputs.environment }}",
+            "commit": "${{ github.sha }}",
+            "branch": "${{ github.ref_name }}",
+            "actor": "${{ github.actor }}"
+          }
+          EOF
+
+          cat deployment-report.json
+
+      - name: 上传部署报告
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-report-${{ github.run_id }}
+          path: deployment-report.json
+          retention-days: 30
+
+  # 清理旧的部署
+  cleanup:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [deploy-production]
+    steps:
+      - name: 清理旧的 Docker 镜像
+        run: |
+          echo "清理旧的 Docker 镜像..."
+          # 这里可以添加清理逻辑
+
+      - name: 清理旧的部署工件
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: artifacts } = await github.rest.actions.listArtifactsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+
+            const oldArtifacts = artifacts.artifacts
+              .filter(artifact => artifact.name.startsWith('deployment-report-'))
+              .filter(artifact => new Date(artifact.created_at) < new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+
+            for (const artifact of oldArtifacts) {
+              await github.rest.actions.deleteArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: artifact.id
+              });
+              console.log(`已删除旧的部署报告: ${artifact.name}`);
+            }

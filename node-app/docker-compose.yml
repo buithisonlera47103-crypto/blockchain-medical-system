@@ -1,0 +1,49 @@
+version: "3.8"
+
+services:
+  backend:
+    build: .
+    container_name: backend-app
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - DB_HOST=postgres-db
+      - DB_USER=myuser
+      - DB_PASSWORD=mypassword123
+      - DB_NAME=emr_db
+    extra_hosts: # 这是手动地址簿，解决服务发现问题的关键
+      - "peer0.org1.example.com:172.18.0.9"
+      - "peer0.org2.example.com:172.18.0.8"
+      - "orderer.example.com:172.18.0.7"
+    networks:
+      - app-network
+      - fabric-network
+    depends_on:
+      - postgres-db
+
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: postgres-db
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=myuser
+      - POSTGRES_PASSWORD=mypassword123
+      - POSTGRES_DB=emr_db
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+  fabric-network:
+    external:
+      name: fabric_test
+
+volumes:
+  postgres-data:

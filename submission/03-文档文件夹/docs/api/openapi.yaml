@@ -1,0 +1,555 @@
+openapi: 3.0.0
+info:
+  title: 区块链电子病历共享系统API
+  version: 1.0.0
+  description: |
+    基于区块链的电子病历共享系统RESTful API文档
+
+    ## 功能特性
+    - 🔐 基于JWT的用户认证
+    - 📁 病历文件上传和管理
+    - 🔒 细粒度权限控制
+    - 🔗 区块链存证和追溯
+    - 📊 完整的审计日志
+
+    ## 认证方式
+    所有API都需要在请求头中包含有效的JWT令牌：
+    ```
+    Authorization: Bearer <your-jwt-token>
+    ```
+  contact:
+    name: EMR System Support
+    email: support@emr-system.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3000/api/v1
+    description: 开发环境
+  - url: https://api.emr-system.com/v1
+    description: 生产环境
+
+# 安全模式定义
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT令牌认证
+
+  schemas:
+    User:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+          description: 用户唯一标识
+        username:
+          type: string
+          description: 用户名
+        email:
+          type: string
+          format: email
+          description: 邮箱地址
+        role:
+          type: string
+          enum: [patient, doctor, hospital_admin, system_admin, auditor]
+          description: 用户角色
+        fullName:
+          type: string
+          description: 用户全名
+        department:
+          type: string
+          description: 所属科室
+        createdAt:
+          type: string
+          format: date-time
+          description: 创建时间
+
+    MedicalRecord:
+      type: object
+      properties:
+        recordId:
+          type: string
+          format: uuid
+          description: 病历记录ID
+        patientId:
+          type: string
+          format: uuid
+          description: 患者ID
+        creatorId:
+          type: string
+          format: uuid
+          description: 创建者ID
+        title:
+          type: string
+          description: 病历标题
+        description:
+          type: string
+          description: 病历描述
+        recordType:
+          type: string
+          enum: [CT, MRI, X_RAY, ECG, BLOOD_TEST, PATHOLOGY, OTHER]
+          description: 病历类型
+        department:
+          type: string
+          description: 科室
+        ipfsCid:
+          type: string
+          description: IPFS内容标识符
+        blockchainTxId:
+          type: string
+          description: 区块链交易ID
+        fileSize:
+          type: integer
+          description: 文件大小（字节）
+        fileHash:
+          type: string
+          description: 文件SHA-256哈希
+        createdAt:
+          type: string
+          format: date-time
+          description: 创建时间
+
+    Permission:
+      type: object
+      properties:
+        permissionId:
+          type: string
+          format: uuid
+          description: 权限ID
+        recordId:
+          type: string
+          format: uuid
+          description: 病历ID
+        granteeId:
+          type: string
+          format: uuid
+          description: 被授权者ID
+        grantorId:
+          type: string
+          format: uuid
+          description: 授权者ID
+        permissionType:
+          type: string
+          enum: [read, write, share, audit]
+          description: 权限类型
+        status:
+          type: string
+          enum: [active, expired, revoked]
+          description: 权限状态
+        grantedAt:
+          type: string
+          format: date-time
+          description: 授权时间
+        expiresAt:
+          type: string
+          format: date-time
+          description: 过期时间
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: 错误类型
+        message:
+          type: string
+          description: 错误消息
+        code:
+          type: integer
+          description: 错误代码
+        timestamp:
+          type: string
+          format: date-time
+          description: 错误时间
+
+# 全局安全要求
+security:
+  - bearerAuth: []
+
+paths:
+  # 认证相关接口
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: 用户注册
+      description: 注册新用户（患者、医生或管理员）
+      security: [] # 注册接口不需要认证
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, email, password, role]
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                  maxLength: 50
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+                  description: 密码至少8位，包含字母和数字
+                role:
+                  type: string
+                  enum: [patient, doctor, hospital_admin]
+                fullName:
+                  type: string
+                department:
+                  type: string
+                licenseNumber:
+                  type: string
+                  description: 医生执业证号（仅医生需要）
+      responses:
+        "201":
+          description: 注册成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId:
+                    type: string
+                    format: uuid
+                  message:
+                    type: string
+        "400":
+          description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: 用户名或邮箱已存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: 用户登录
+      description: 用户登录获取JWT令牌
+      security: [] # 登录接口不需要认证
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                mfaCode:
+                  type: string
+                  description: 多因子认证代码（如果启用）
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT访问令牌
+                  refreshToken:
+                    type: string
+                    description: 刷新令牌
+                  expiresIn:
+                    type: integer
+                    description: 令牌过期时间（秒）
+                  user:
+                    $ref: "#/components/schemas/User"
+        "401":
+          description: 用户名或密码错误
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # 病历管理接口
+  /records:
+    get:
+      tags:
+        - Medical Records
+      summary: 获取病历列表
+      description: 获取当前用户可访问的病历列表
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [created_at, title, record_type]
+            default: created_at
+        - name: sortOrder
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+        - name: recordType
+          in: query
+          schema:
+            type: string
+            enum: [CT, MRI, X_RAY, ECG, BLOOD_TEST, PATHOLOGY, OTHER]
+        - name: department
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: 搜索关键词
+      responses:
+        "200":
+          description: 成功获取病历列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  records:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MedicalRecord"
+                  pagination:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      total:
+                        type: integer
+                      totalPages:
+                        type: integer
+
+    post:
+      tags:
+        - Medical Records
+      summary: 上传新病历
+      description: 上传新的病历文件到系统
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, patientId, title, recordType]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: 病历文件
+                patientId:
+                  type: string
+                  format: uuid
+                  description: 患者ID
+                title:
+                  type: string
+                  description: 病历标题
+                description:
+                  type: string
+                  description: 病历描述
+                recordType:
+                  type: string
+                  enum: [CT, MRI, X_RAY, ECG, BLOOD_TEST, PATHOLOGY, OTHER]
+                department:
+                  type: string
+                  description: 科室
+      responses:
+        "201":
+          description: 病历上传成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recordId:
+                    type: string
+                    format: uuid
+                  ipfsCid:
+                    type: string
+                  blockchainTxId:
+                    type: string
+                  message:
+                    type: string
+
+  /records/{recordId}:
+    get:
+      tags:
+        - Medical Records
+      summary: 获取病历详情
+      description: 获取指定病历的详细信息
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 成功获取病历详情
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/MedicalRecord"
+                  - type: object
+                    properties:
+                      content:
+                        type: string
+                        description: 解密后的病历内容（Base64编码）
+        "403":
+          description: 无权限访问该病历
+        "404":
+          description: 病历不存在
+
+  /records/{recordId}/download:
+    get:
+      tags:
+        - Medical Records
+      summary: 下载病历文件
+      description: 下载指定病历的原始文件
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 文件下载成功
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "403":
+          description: 无权限下载该文件
+        "404":
+          description: 文件不存在
+
+  # 权限管理接口
+  /permissions/request:
+    post:
+      tags:
+        - Permissions
+      summary: 请求访问权限
+      description: 向病历所有者请求访问权限
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [recordId, requestedPermissions, purpose]
+              properties:
+                recordId:
+                  type: string
+                  format: uuid
+                requestedPermissions:
+                  type: array
+                  items:
+                    type: string
+                    enum: [read, write, share]
+                purpose:
+                  type: string
+                  description: 请求目的
+                urgency:
+                  type: string
+                  enum: [low, normal, high, emergency]
+                  default: normal
+      responses:
+        "201":
+          description: 权限请求已提交
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requestId:
+                    type: string
+                    format: uuid
+                  message:
+                    type: string
+
+  /permissions/check:
+    post:
+      tags:
+        - Permissions
+      summary: 检查访问权限
+      description: 检查当前用户对指定病历的访问权限
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [recordId, action]
+              properties:
+                recordId:
+                  type: string
+                  format: uuid
+                action:
+                  type: string
+                  enum: [read, write, share, audit]
+      responses:
+        "200":
+          description: 权限检查结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hasAccess:
+                    type: boolean
+                  permissions:
+                    type: array
+                    items:
+                      type: string
+                  expiresAt:
+                    type: string
+                    format: date-time
+
+tags:
+  - name: Authentication
+    description: 用户认证相关接口
+  - name: Medical Records
+    description: 病历管理相关接口
+  - name: Permissions
+    description: 权限管理相关接口
+  - name: Audit
+    description: 审计日志相关接口

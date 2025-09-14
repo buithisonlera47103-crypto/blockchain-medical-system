@@ -1,0 +1,565 @@
+# Hyperledger Fabric网络Kubernetes部署配置
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fabric-network
+  labels:
+    name: fabric-network
+    app.kubernetes.io/name: fabric-network
+    app.kubernetes.io/component: blockchain
+---
+# Orderer部署
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orderer
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: orderer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fabric-network
+      component: orderer
+  template:
+    metadata:
+      labels:
+        app: fabric-network
+        component: orderer
+    spec:
+      containers:
+      - name: orderer
+        image: hyperledger/fabric-orderer:2.5.12
+        ports:
+        - containerPort: 7050
+        env:
+        - name: FABRIC_LOGGING_SPEC
+          value: INFO
+        - name: ORDERER_GENERAL_LISTENADDRESS
+          value: 0.0.0.0
+        - name: ORDERER_GENERAL_LISTENPORT
+          value: "7050"
+        - name: ORDERER_GENERAL_LOCALMSPID
+          value: OrdererMSP
+        - name: ORDERER_GENERAL_LOCALMSPDIR
+          value: /var/hyperledger/orderer/msp
+        - name: ORDERER_GENERAL_TLS_ENABLED
+          value: "true"
+        - name: ORDERER_GENERAL_TLS_PRIVATEKEY
+          value: /var/hyperledger/orderer/tls/server.key
+        - name: ORDERER_GENERAL_TLS_CERTIFICATE
+          value: /var/hyperledger/orderer/tls/server.crt
+        - name: ORDERER_GENERAL_TLS_ROOTCAS
+          value: '[/var/hyperledger/orderer/tls/ca.crt]'
+        - name: ORDERER_GENERAL_CLUSTER_CLIENTCERTIFICATE
+          value: /var/hyperledger/orderer/tls/server.crt
+        - name: ORDERER_GENERAL_CLUSTER_CLIENTPRIVATEKEY
+          value: /var/hyperledger/orderer/tls/server.key
+        - name: ORDERER_GENERAL_CLUSTER_ROOTCAS
+          value: '[/var/hyperledger/orderer/tls/ca.crt]'
+        - name: ORDERER_GENERAL_BOOTSTRAPMETHOD
+          value: none
+        - name: ORDERER_CHANNELPARTICIPATION_ENABLED
+          value: "true"
+        - name: ORDERER_ADMIN_TLS_ENABLED
+          value: "true"
+        - name: ORDERER_ADMIN_TLS_CERTIFICATE
+          value: /var/hyperledger/orderer/tls/server.crt
+        - name: ORDERER_ADMIN_TLS_PRIVATEKEY
+          value: /var/hyperledger/orderer/tls/server.key
+        - name: ORDERER_ADMIN_TLS_ROOTCAS
+          value: '[/var/hyperledger/orderer/tls/ca.crt]'
+        - name: ORDERER_ADMIN_TLS_CLIENTROOTCAS
+          value: '[/var/hyperledger/orderer/tls/ca.crt]'
+        - name: ORDERER_ADMIN_LISTENADDRESS
+          value: 0.0.0.0:7053
+        volumeMounts:
+        - name: orderer-msp
+          mountPath: /var/hyperledger/orderer/msp
+        - name: orderer-tls
+          mountPath: /var/hyperledger/orderer/tls
+        - name: orderer-data
+          mountPath: /var/hyperledger/production/orderer
+      volumes:
+      - name: orderer-msp
+        secret:
+          secretName: orderer-msp
+      - name: orderer-tls
+        secret:
+          secretName: orderer-tls
+      - name: orderer-data
+        persistentVolumeClaim:
+          claimName: orderer-data-pvc
+---
+# Orderer服务
+apiVersion: v1
+kind: Service
+metadata:
+  name: orderer
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: orderer
+spec:
+  type: ClusterIP
+  ports:
+  - name: grpc
+    port: 7050
+    targetPort: 7050
+  - name: admin
+    port: 7053
+    targetPort: 7053
+  selector:
+    app: fabric-network
+    component: orderer
+---
+# Org1 Peer部署
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: peer0-org1
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: peer
+    org: org1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fabric-network
+      component: peer
+      org: org1
+  template:
+    metadata:
+      labels:
+        app: fabric-network
+        component: peer
+        org: org1
+    spec:
+      containers:
+      - name: peer
+        image: hyperledger/fabric-peer:2.5.12
+        ports:
+        - containerPort: 7051
+        - containerPort: 7052
+        env:
+        - name: FABRIC_LOGGING_SPEC
+          value: INFO
+        - name: CORE_PEER_TLS_ENABLED
+          value: "true"
+        - name: CORE_PEER_GOSSIP_USELEADERELECTION
+          value: "true"
+        - name: CORE_PEER_GOSSIP_ORGLEADER
+          value: "false"
+        - name: CORE_PEER_PROFILE_ENABLED
+          value: "false"
+        - name: CORE_PEER_TLS_CERT_FILE
+          value: /etc/hyperledger/fabric/tls/server.crt
+        - name: CORE_PEER_TLS_KEY_FILE
+          value: /etc/hyperledger/fabric/tls/server.key
+        - name: CORE_PEER_TLS_ROOTCERT_FILE
+          value: /etc/hyperledger/fabric/tls/ca.crt
+        - name: CORE_PEER_ID
+          value: peer0.org1.example.com
+        - name: CORE_PEER_ADDRESS
+          value: peer0.org1.example.com:7051
+        - name: CORE_PEER_LISTENADDRESS
+          value: 0.0.0.0:7051
+        - name: CORE_PEER_CHAINCODEADDRESS
+          value: peer0.org1.example.com:7052
+        - name: CORE_PEER_CHAINCODELISTENADDRESS
+          value: 0.0.0.0:7052
+        - name: CORE_PEER_GOSSIP_BOOTSTRAP
+          value: peer0.org1.example.com:7051
+        - name: CORE_PEER_GOSSIP_EXTERNALENDPOINT
+          value: peer0.org1.example.com:7051
+        - name: CORE_PEER_LOCALMSPID
+          value: Org1MSP
+        - name: CORE_VM_ENDPOINT
+          value: unix:///host/var/run/docker.sock
+        - name: CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE
+          value: fabric-network
+        - name: CORE_LEDGER_STATE_STATEDATABASE
+          value: CouchDB
+        - name: CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS
+          value: couchdb-org1:5984
+        - name: CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME
+          value: admin
+        - name: CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD
+          value: adminpw
+        volumeMounts:
+        - name: peer-msp
+          mountPath: /etc/hyperledger/fabric/msp
+        - name: peer-tls
+          mountPath: /etc/hyperledger/fabric/tls
+        - name: peer-data
+          mountPath: /var/hyperledger/production
+        - name: docker-socket
+          mountPath: /host/var/run/docker.sock
+      volumes:
+      - name: peer-msp
+        secret:
+          secretName: peer0-org1-msp
+      - name: peer-tls
+        secret:
+          secretName: peer0-org1-tls
+      - name: peer-data
+        persistentVolumeClaim:
+          claimName: peer0-org1-data-pvc
+      - name: docker-socket
+        hostPath:
+          path: /var/run/docker.sock
+---
+# Org1 Peer服务
+apiVersion: v1
+kind: Service
+metadata:
+  name: peer0-org1
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: peer
+    org: org1
+spec:
+  type: ClusterIP
+  ports:
+  - name: grpc
+    port: 7051
+    targetPort: 7051
+  - name: chaincode
+    port: 7052
+    targetPort: 7052
+  selector:
+    app: fabric-network
+    component: peer
+    org: org1
+---
+# Org2 Peer部署
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: peer0-org2
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: peer
+    org: org2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fabric-network
+      component: peer
+      org: org2
+  template:
+    metadata:
+      labels:
+        app: fabric-network
+        component: peer
+        org: org2
+    spec:
+      containers:
+      - name: peer
+        image: hyperledger/fabric-peer:2.5.12
+        ports:
+        - containerPort: 9051
+        - containerPort: 9052
+        env:
+        - name: FABRIC_LOGGING_SPEC
+          value: INFO
+        - name: CORE_PEER_TLS_ENABLED
+          value: "true"
+        - name: CORE_PEER_GOSSIP_USELEADERELECTION
+          value: "true"
+        - name: CORE_PEER_GOSSIP_ORGLEADER
+          value: "false"
+        - name: CORE_PEER_PROFILE_ENABLED
+          value: "false"
+        - name: CORE_PEER_TLS_CERT_FILE
+          value: /etc/hyperledger/fabric/tls/server.crt
+        - name: CORE_PEER_TLS_KEY_FILE
+          value: /etc/hyperledger/fabric/tls/server.key
+        - name: CORE_PEER_TLS_ROOTCERT_FILE
+          value: /etc/hyperledger/fabric/tls/ca.crt
+        - name: CORE_PEER_ID
+          value: peer0.org2.example.com
+        - name: CORE_PEER_ADDRESS
+          value: peer0.org2.example.com:9051
+        - name: CORE_PEER_LISTENADDRESS
+          value: 0.0.0.0:9051
+        - name: CORE_PEER_CHAINCODEADDRESS
+          value: peer0.org2.example.com:9052
+        - name: CORE_PEER_CHAINCODELISTENADDRESS
+          value: 0.0.0.0:9052
+        - name: CORE_PEER_GOSSIP_BOOTSTRAP
+          value: peer0.org2.example.com:9051
+        - name: CORE_PEER_GOSSIP_EXTERNALENDPOINT
+          value: peer0.org2.example.com:9051
+        - name: CORE_PEER_LOCALMSPID
+          value: Org2MSP
+        - name: CORE_VM_ENDPOINT
+          value: unix:///host/var/run/docker.sock
+        - name: CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE
+          value: fabric-network
+        - name: CORE_LEDGER_STATE_STATEDATABASE
+          value: CouchDB
+        - name: CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS
+          value: couchdb-org2:5984
+        - name: CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME
+          value: admin
+        - name: CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD
+          value: adminpw
+        volumeMounts:
+        - name: peer-msp
+          mountPath: /etc/hyperledger/fabric/msp
+        - name: peer-tls
+          mountPath: /etc/hyperledger/fabric/tls
+        - name: peer-data
+          mountPath: /var/hyperledger/production
+        - name: docker-socket
+          mountPath: /host/var/run/docker.sock
+      volumes:
+      - name: peer-msp
+        secret:
+          secretName: peer0-org2-msp
+      - name: peer-tls
+        secret:
+          secretName: peer0-org2-tls
+      - name: peer-data
+        persistentVolumeClaim:
+          claimName: peer0-org2-data-pvc
+      - name: docker-socket
+        hostPath:
+          path: /var/run/docker.sock
+---
+# Org2 Peer服务
+apiVersion: v1
+kind: Service
+metadata:
+  name: peer0-org2
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: peer
+    org: org2
+spec:
+  type: ClusterIP
+  ports:
+  - name: grpc
+    port: 9051
+    targetPort: 9051
+  - name: chaincode
+    port: 9052
+    targetPort: 9052
+  selector:
+    app: fabric-network
+    component: peer
+    org: org2
+---
+# CA Org1部署
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ca-org1
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: ca
+    org: org1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fabric-network
+      component: ca
+      org: org1
+  template:
+    metadata:
+      labels:
+        app: fabric-network
+        component: ca
+        org: org1
+    spec:
+      containers:
+      - name: ca
+        image: hyperledger/fabric-ca:1.5.12
+        ports:
+        - containerPort: 7054
+        env:
+        - name: FABRIC_CA_HOME
+          value: /etc/hyperledger/fabric-ca-server
+        - name: FABRIC_CA_SERVER_CA_NAME
+          value: ca-org1
+        - name: FABRIC_CA_SERVER_TLS_ENABLED
+          value: "true"
+        - name: FABRIC_CA_SERVER_PORT
+          value: "7054"
+        - name: FABRIC_CA_SERVER_OPERATIONS_LISTENADDRESS
+          value: 0.0.0.0:17054
+        volumeMounts:
+        - name: ca-data
+          mountPath: /etc/hyperledger/fabric-ca-server
+      volumes:
+      - name: ca-data
+        persistentVolumeClaim:
+          claimName: ca-org1-data-pvc
+---
+# CA Org1服务
+apiVersion: v1
+kind: Service
+metadata:
+  name: ca-org1
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: ca
+    org: org1
+spec:
+  type: ClusterIP
+  ports:
+  - name: ca
+    port: 7054
+    targetPort: 7054
+  - name: operations
+    port: 17054
+    targetPort: 17054
+  selector:
+    app: fabric-network
+    component: ca
+    org: org1
+---
+# CA Org2部署
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ca-org2
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: ca
+    org: org2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fabric-network
+      component: ca
+      org: org2
+  template:
+    metadata:
+      labels:
+        app: fabric-network
+        component: ca
+        org: org2
+    spec:
+      containers:
+      - name: ca
+        image: hyperledger/fabric-ca:1.5.12
+        ports:
+        - containerPort: 8054
+        env:
+        - name: FABRIC_CA_HOME
+          value: /etc/hyperledger/fabric-ca-server
+        - name: FABRIC_CA_SERVER_CA_NAME
+          value: ca-org2
+        - name: FABRIC_CA_SERVER_TLS_ENABLED
+          value: "true"
+        - name: FABRIC_CA_SERVER_PORT
+          value: "8054"
+        - name: FABRIC_CA_SERVER_OPERATIONS_LISTENADDRESS
+          value: 0.0.0.0:18054
+        volumeMounts:
+        - name: ca-data
+          mountPath: /etc/hyperledger/fabric-ca-server
+      volumes:
+      - name: ca-data
+        persistentVolumeClaim:
+          claimName: ca-org2-data-pvc
+---
+# CA Org2服务
+apiVersion: v1
+kind: Service
+metadata:
+  name: ca-org2
+  namespace: fabric-network
+  labels:
+    app: fabric-network
+    component: ca
+    org: org2
+spec:
+  type: ClusterIP
+  ports:
+  - name: ca
+    port: 8054
+    targetPort: 8054
+  - name: operations
+    port: 18054
+    targetPort: 18054
+  selector:
+    app: fabric-network
+    component: ca
+    org: org2
+---
+# 持久化存储卷声明
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: orderer-data-pvc
+  namespace: fabric-network
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: peer0-org1-data-pvc
+  namespace: fabric-network
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: peer0-org2-data-pvc
+  namespace: fabric-network
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ca-org1-data-pvc
+  namespace: fabric-network
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ca-org2-data-pvc
+  namespace: fabric-network
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi

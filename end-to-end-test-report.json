@@ -1,0 +1,139 @@
+{
+  "summary": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0,
+    "successRate": "100.0"
+  },
+  "timestamp": "2025-09-13T10:45:59.612Z",
+  "environment": {
+    "nodeVersion": "v22.18.0",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "services": {
+    "backend": {
+      "host": "localhost",
+      "port": 3001,
+      "protocol": "http"
+    },
+    "frontend": {
+      "host": "localhost",
+      "port": 3000,
+      "protocol": "http"
+    },
+    "database": {
+      "host": "localhost",
+      "port": 3306
+    },
+    "redis": {
+      "host": "localhost",
+      "port": 6379
+    },
+    "ipfs": {
+      "host": "localhost",
+      "port": 5001
+    },
+    "blockchain": {
+      "orderer": "localhost:7050",
+      "peer": "localhost:7051"
+    }
+  },
+  "tests": [
+    {
+      "name": "前端服务可访问性",
+      "passed": true,
+      "message": "状态码: 200",
+      "details": {
+        "statusCode": 200,
+        "contentLength": 1610
+      },
+      "timestamp": "2025-09-13T10:45:59.224Z"
+    },
+    {
+      "name": "前端React应用加载",
+      "passed": true,
+      "message": "检测到React应用结构",
+      "details": {},
+      "timestamp": "2025-09-13T10:45:59.224Z"
+    },
+    {
+      "name": "后端健康检查",
+      "passed": true,
+      "message": "服务健康",
+      "details": {
+        "status": "OK",
+        "timestamp": "2025-09-13T10:45:59.226Z",
+        "uptime": 50.710594358,
+        "environment": "development",
+        "version": "1.0.0"
+      },
+      "timestamp": "2025-09-13T10:45:59.227Z"
+    },
+    {
+      "name": "用户注册功能",
+      "passed": "user_1757760359399_zhbsdn5gc",
+      "message": "用户ID: user_1757760359399_zhbsdn5gc",
+      "details": {
+        "userId": "user_1757760359399_zhbsdn5gc",
+        "message": "用户注册成功"
+      },
+      "timestamp": "2025-09-13T10:45:59.413Z"
+    },
+    {
+      "name": "用户登录功能",
+      "passed": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJ1c2VyXzE3NTc3NjAzNTkzOTlfemhic2RuNWdjIiwidXNlcm5hbWUiOiJ0ZXN0dXNlcl8xNzU3NzYwMzU5MjI3IiwiZW1haWwiOiJ0ZXN0XzE3NTc3NjAzNTkyMjdAZXhhbXBsZS5jb20iLCJyb2xlIjoicGF0aWVudCIsInBlcm1pc3Npb25zIjpbInJlY29yZDpyZWFkOnNlbGYiLCJzZWFyY2g6ZW5jcnlwdGVkIl0sImlhdCI6MTc1Nzc2MDM1OSwiZXhwIjoxNzU3ODQ2NzU5fQ.ZilWvXgC3edNmt8KU_vMbhuyhLV4cA6EsOEVWPlsq1s",
+      "message": "获取到JWT令牌",
+      "details": {
+        "hasToken": true
+      },
+      "timestamp": "2025-09-13T10:45:59.597Z"
+    },
+    {
+      "name": "数据库连接状态",
+      "passed": true,
+      "message": "数据库连接正常",
+      "details": {
+        "status": "up"
+      },
+      "timestamp": "2025-09-13T10:45:59.600Z"
+    },
+    {
+      "name": "缓存服务状态",
+      "passed": true,
+      "message": "缓存服务正常",
+      "details": {
+        "status": "up"
+      },
+      "timestamp": "2025-09-13T10:45:59.603Z"
+    },
+    {
+      "name": "IPFS节点状态",
+      "passed": true,
+      "message": "IPFS节点运行正常",
+      "details": {
+        "statusCode": 200
+      },
+      "timestamp": "2025-09-13T10:45:59.605Z"
+    },
+    {
+      "name": "区块链网络连接",
+      "passed": true,
+      "message": "区块链网络连接正常",
+      "details": {
+        "status": "degraded"
+      },
+      "timestamp": "2025-09-13T10:45:59.609Z"
+    },
+    {
+      "name": "CORS跨域配置",
+      "passed": true,
+      "message": "CORS配置正确",
+      "details": {
+        "allowOrigin": "http://localhost:3000",
+        "allowMethods": "GET,POST,PUT,DELETE,OPTIONS,PATCH"
+      },
+      "timestamp": "2025-09-13T10:45:59.612Z"
+    }
+  ]
+}
