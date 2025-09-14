@@ -1,9 +1,12 @@
 {
   "version": 2,
   "name": "blockchain-medical-system",
-  "buildCommand": "cd react-app && npm ci && npm run build",
+  "buildCommand": "cd react-app && PUPPETEER_SKIP_DOWNLOAD=true npm ci && npm run build",
   "outputDirectory": "react-app/build",
   "installCommand": "echo 'Dependencies will be installed during build'",
+  "env": {
+    "PUPPETEER_SKIP_DOWNLOAD": "true"
+  },
   "rewrites": [
     {
       "source": "/(.*)",
