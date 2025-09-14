@@ -1,7 +1,7 @@
 {
   "version": 2,
   "name": "blockchain-emr-frontend",
-  "buildCommand": "npm run build",
+  "buildCommand": "npm ci && npm run build",
   "outputDirectory": "build",
   "installCommand": "npm ci",
   "rewrites": [
