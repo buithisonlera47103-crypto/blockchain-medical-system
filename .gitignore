@@ -66,3 +66,11 @@ blockchain-data/
 
 # Fabric blockchain files (权限问题)
 fabric/
+
+# IPFS files
+ipfs/
+
+# Cache files
+.cache/
+*/.cache/
+**/.cache/
