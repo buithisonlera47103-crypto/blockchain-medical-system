@@ -215,3 +215,4 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 >>>>>>> 0dc4b7d80498a4407edaf6c259974522ca548a29
+ipfs/kubo/ipfs
