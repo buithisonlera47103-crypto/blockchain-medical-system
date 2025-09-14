@@ -3,7 +3,7 @@
  * 前后端统一使用的验证规则
  */
 
-const Joi = require('joi');
+import * as Joi from 'joi';
 
 // 基础验证规则
 export const BaseValidation = {
