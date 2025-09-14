@@ -67,9 +67,9 @@
     "zustand": "^5.0.7"
   },
   "scripts": {
-    "install": "npm ci",
     "start": "react-scripts start",
     "build": "react-scripts build",
+    "vercel-build": "react-scripts build",
     "test": "react-scripts test --passWithNoTests",
     "eject": "react-scripts eject",
     "type-check": "tsc --noEmit",

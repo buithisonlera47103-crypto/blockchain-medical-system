@@ -1,0 +1,53 @@
+# Backend and blockchain files
+backend-app/
+node-app/
+simple-app/
+fabric/
+chaincode/
+ipfs/
+
+# Database files
+database/
+
+# Development files
+.git/
+.github/
+.vscode/
+.idea/
+
+# Logs and temporary files
+logs/
+*.log
+*.pid
+temp/
+tmp/
+
+# Test files
+tests/
+test-*.js
+*test*.json
+*test*.md
+
+# Documentation
+docs/
+*.md
+!react-app/README.md
+
+# Configuration files not needed for frontend
+docker-compose*.yml
+Dockerfile
+!react-app/Dockerfile
+
+# Scripts
+scripts/
+*.sh
+
+# Large files
+submission/
+backups/
+recovery/
+
+# Cache
+.cache/
+node_modules/
+!react-app/node_modules/
