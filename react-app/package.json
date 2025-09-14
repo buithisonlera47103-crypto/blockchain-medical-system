@@ -67,6 +67,7 @@
     "zustand": "^5.0.7"
   },
   "scripts": {
+    "install": "npm ci",
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test --passWithNoTests",

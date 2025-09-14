@@ -1,9 +1,9 @@
 {
   "version": 2,
   "name": "blockchain-medical-system",
-  "buildCommand": "npm run build",
+  "buildCommand": "cd react-app && npm ci && npm run build",
   "outputDirectory": "react-app/build",
-  "installCommand": "npm run install",
+  "installCommand": "cd react-app && npm ci",
   "rewrites": [
     {
       "source": "/(.*)",

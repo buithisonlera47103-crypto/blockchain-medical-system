@@ -3,15 +3,11 @@
   "version": "1.0.0",
   "description": "Blockchain-based Electronic Medical Records System",
   "scripts": {
-    "install": "cd react-app && npm ci",
+    "postinstall": "cd react-app && npm ci",
     "build": "cd react-app && npm run build",
     "start": "cd react-app && npm start",
     "test": "cd react-app && npm test"
   },
-  "workspaces": [
-    "react-app",
-    "backend-app"
-  ],
   "engines": {
     "node": ">=16.0.0",
     "npm": ">=8.0.0"
