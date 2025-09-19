@@ -1,0 +1,118 @@
+version: '3.8'
+
+networks:
+  emr-network:
+    name: emr-production-network
+
+services:
+  # Hospital1 Peer0
+  peer0.hospital1.emr.com:
+    image: docker.m.daocloud.io/hyperledger/fabric-peer:2.5
+    environment:
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=emr-production-network
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_PROFILE_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_ID=peer0.hospital1.emr.com
+      - CORE_PEER_ADDRESS=peer0.hospital1.emr.com:7051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:7051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.hospital1.emr.com:7052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:7052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer1.hospital1.emr.com:8051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.hospital1.emr.com:7051
+      - CORE_PEER_LOCALMSPID=Hospital1MSP
+      - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:17051
+      - CORE_METRICS_PROVIDER=prometheus
+    volumes:
+      - /var/run/:/host/var/run/
+      - ./crypto-config/peerOrganizations/hospital1.emr.com/peers/peer0.hospital1.emr.com/msp:/etc/hyperledger/fabric/msp
+      - ./crypto-config/peerOrganizations/hospital1.emr.com/peers/peer0.hospital1.emr.com/tls:/etc/hyperledger/fabric/tls
+      - ./crypto-config:/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto
+      - ./channel-artifacts:/opt/gopath/src/github.com/hyperledger/fabric/peer/channel-artifacts
+    ports:
+      - 7051:7051
+      - 17051:17051
+    networks:
+      - emr-network
+    depends_on:
+      - orderer.emr.com
+
+  # Hospital1 Peer1
+  peer1.hospital1.emr.com:
+    image: docker.m.daocloud.io/hyperledger/fabric-peer:2.5
+    environment:
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=emr-production-network
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_PROFILE_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_ID=peer1.hospital1.emr.com
+      - CORE_PEER_ADDRESS=peer1.hospital1.emr.com:8051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:8051
+      - CORE_PEER_CHAINCODEADDRESS=peer1.hospital1.emr.com:8052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:8052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.hospital1.emr.com:7051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer1.hospital1.emr.com:8051
+      - CORE_PEER_LOCALMSPID=Hospital1MSP
+      - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:18051
+      - CORE_METRICS_PROVIDER=prometheus
+    volumes:
+      - /var/run/:/host/var/run/
+      - ./crypto-config/peerOrganizations/hospital1.emr.com/peers/peer1.hospital1.emr.com/msp:/etc/hyperledger/fabric/msp
+      - ./crypto-config/peerOrganizations/hospital1.emr.com/peers/peer1.hospital1.emr.com/tls:/etc/hyperledger/fabric/tls
+      - ./crypto-config:/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto
+      - ./channel-artifacts:/opt/gopath/src/github.com/hyperledger/fabric/peer/channel-artifacts
+    ports:
+      - 8051:8051
+      - 18051:18051
+    networks:
+      - emr-network
+    depends_on:
+      - orderer.emr.com
+
+  # Orderer
+  orderer.emr.com:
+    image: docker.m.daocloud.io/hyperledger/fabric-orderer:2.5
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - ORDERER_GENERAL_LISTENADDRESS=0.0.0.0
+      - ORDERER_GENERAL_LISTENPORT=7050
+      - ORDERER_GENERAL_LOCALMSPID=OrdererMSP
+      - ORDERER_GENERAL_LOCALMSPDIR=/var/hyperledger/msp
+      - ORDERER_GENERAL_TLS_ENABLED=true
+      - ORDERER_GENERAL_TLS_PRIVATEKEY=/var/hyperledger/tls/server.key
+      - ORDERER_GENERAL_TLS_CERTIFICATE=/var/hyperledger/tls/server.crt
+      - ORDERER_GENERAL_TLS_ROOTCAS=[/var/hyperledger/tls/ca.crt, /var/hyperledger/msp/tlscacerts/tlsca.emr.com-cert.pem]
+      - ORDERER_GENERAL_TLS_CLIENTROOTCAS=[/var/hyperledger/tls/ca.crt, /var/hyperledger/msp/tlscacerts/tlsca.emr.com-cert.pem]
+      - ORDERER_GENERAL_TLS_CLIENTAUTHREQUIRED=false
+      - ORDERER_GENERAL_CLUSTER_CLIENTCERTIFICATE=/var/hyperledger/tls/server.crt
+      - ORDERER_GENERAL_CLUSTER_CLIENTPRIVATEKEY=/var/hyperledger/tls/server.key
+      - ORDERER_GENERAL_CLUSTER_ROOTCAS=[/var/hyperledger/tls/ca.crt, /var/hyperledger/msp/tlscacerts/tlsca.emr.com-cert.pem]
+      - ORDERER_GENERAL_CLUSTER_CLIENTROOTCAS=[/var/hyperledger/tls/ca.crt, /var/hyperledger/msp/tlscacerts/tlsca.emr.com-cert.pem]
+      - ORDERER_GENERAL_BOOTSTRAPMETHOD=file
+      - ORDERER_GENERAL_BOOTSTRAPFILE=/var/hyperledger/channel-artifacts/genesis.block
+      - ORDERER_CHANNELPARTICIPATION_ENABLED=false
+      - ORDERER_ADMIN_TLS_ENABLED=true
+      - ORDERER_ADMIN_TLS_CERTIFICATE=/var/hyperledger/tls/server.crt
+      - ORDERER_ADMIN_TLS_PRIVATEKEY=/var/hyperledger/tls/server.key
+      - ORDERER_ADMIN_TLS_ROOTCAS=[/var/hyperledger/tls/ca.crt]
+      - ORDERER_ADMIN_TLS_CLIENTROOTCAS=[/var/hyperledger/tls/ca.crt]
+      - ORDERER_ADMIN_TLS_CLIENTAUTHREQUIRED=true
+      - ORDERER_ADMIN_LISTENADDRESS=0.0.0.0:7053
+    working_dir: /opt/gopath/src/github.com/hyperledger/fabric
+    command: orderer
+    volumes:
+      - ./orderer-runtime:/var/hyperledger
+      - ./channel-artifacts:/var/hyperledger/channel-artifacts
+    ports:
+      - 7050:7050
+      - 7053:7053
+    networks:
+      - emr-network
