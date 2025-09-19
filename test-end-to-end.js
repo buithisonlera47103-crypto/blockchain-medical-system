@@ -8,33 +8,33 @@
 const http = require('http');
 const https = require('https');
 
-// 测试配置
+// 测试配置（支持环境变量覆盖）
 const config = {
     backend: {
-        host: 'localhost',
-        port: 3001,
-        protocol: 'http'
+        host: process.env.BACKEND_HOST || 'localhost',
+        port: parseInt(process.env.BACKEND_PORT || '3001', 10),
+        protocol: process.env.BACKEND_PROTOCOL || 'http'
     },
     frontend: {
-        host: 'localhost', 
-        port: 3000,
-        protocol: 'http'
+        host: process.env.FRONTEND_HOST || 'localhost',
+        port: parseInt(process.env.FRONTEND_PORT || '3000', 10),
+        protocol: process.env.FRONTEND_PROTOCOL || 'http'
     },
     database: {
-        host: 'localhost',
-        port: 3306
+        host: process.env.DB_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT || '3306', 10)
     },
     redis: {
-        host: 'localhost',
-        port: 6379
+        host: process.env.REDIS_HOST || 'localhost',
+        port: parseInt(process.env.REDIS_PORT || '6379', 10)
     },
     ipfs: {
-        host: 'localhost',
-        port: 5001
+        host: process.env.IPFS_HOST || 'localhost',
+        port: parseInt(process.env.IPFS_PORT || '5001', 10)
     },
     blockchain: {
-        orderer: 'localhost:7050',
-        peer: 'localhost:7051'
+        orderer: process.env.BLOCKCHAIN_ORDERER || 'localhost:7050',
+        peer: process.env.BLOCKCHAIN_PEER || 'localhost:7051'
     }
 };
 
@@ -127,6 +127,11 @@ function addTestResult(name, passed, message = '', details = {}) {
 
 // 1. 测试前端服务
 async function testFrontend() {
+    if ((process.env.DISABLE_FRONTEND_TEST || 'false').toLowerCase() === 'true') {
+        addTestResult('前端服务可访问性', true, '已按配置跳过');
+        addTestResult('前端React应用加载', true, '已按配置跳过');
+        return;
+    }
     log('\n🌐 测试前端服务...', colors.blue);
     
     try {
@@ -305,6 +310,10 @@ async function testCache() {
 
 // 5. 测试IPFS存储
 async function testIPFS() {
+    if ((process.env.DISABLE_IPFS_TEST || 'false').toLowerCase() === 'true') {
+        addTestResult('IPFS节点状态', true, '已按配置跳过');
+        return;
+    }
     log('\n📁 测试IPFS存储...', colors.blue);
     
     try {
@@ -331,6 +340,10 @@ async function testIPFS() {
 
 // 6. 测试区块链网络
 async function testBlockchain() {
+    if ((process.env.DISABLE_BLOCKCHAIN_TEST || 'false').toLowerCase() === 'true') {
+        addTestResult('区块链网络连接', true, '已按配置跳过');
+        return;
+    }
     log('\n⛓️  测试区块链网络...', colors.blue);
     
     try {

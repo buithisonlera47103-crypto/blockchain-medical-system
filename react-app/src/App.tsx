@@ -8,6 +8,7 @@ import ProtectedRoute, { AdminRoute } from './components/ProtectedRoute';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ChatProvider } from './contexts/ChatContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { MedicalRecordProvider } from './contexts/MedicalRecordContext';
 import { initializeLanguage } from './i18n/config';
 import { ErrorProvider } from './providers/ErrorProvider';
 import { store } from './store';
@@ -217,11 +218,13 @@ const App: React.FC = () => {
       <ErrorProvider>
         <ThemeProvider>
           <AuthProvider>
-            <ChatProvider>
-              <Router>
-                <AppContent />
-              </Router>
-            </ChatProvider>
+            <MedicalRecordProvider>
+              <ChatProvider>
+                <Router>
+                  <AppContent />
+                </Router>
+              </ChatProvider>
+            </MedicalRecordProvider>
           </AuthProvider>
         </ThemeProvider>
       </ErrorProvider>

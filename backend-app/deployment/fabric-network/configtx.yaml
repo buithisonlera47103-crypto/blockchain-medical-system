@@ -1,7 +1,4 @@
-# Configuration Transaction (configtx) for Production EMR Network
-# Defines channel configuration and policies
-# Compliant with read111.md multi-organization requirements
-
+# Simplified Configuration Transaction for EMR Network
 Organizations:
   # Orderer Organization
   - &OrdererOrg
@@ -18,8 +15,6 @@ Organizations:
       Admins:
         Type: Signature
         Rule: "OR('OrdererMSP.admin')"
-    OrdererEndpoints:
-      - orderer.emr.com:7050
 
   # Hospital1 Organization
   - &Hospital1
@@ -43,50 +38,6 @@ Organizations:
       - Host: peer0.hospital1.emr.com
         Port: 7051
 
-  # Hospital2 Organization
-  - &Hospital2
-    Name: Hospital2MSP
-    ID: Hospital2MSP
-    MSPDir: crypto-config/peerOrganizations/hospital2.emr.com/msp
-    Policies:
-      Readers:
-        Type: Signature
-        Rule: "OR('Hospital2MSP.admin', 'Hospital2MSP.peer', 'Hospital2MSP.client')"
-      Writers:
-        Type: Signature
-        Rule: "OR('Hospital2MSP.admin', 'Hospital2MSP.client')"
-      Admins:
-        Type: Signature
-        Rule: "OR('Hospital2MSP.admin')"
-      Endorsement:
-        Type: Signature
-        Rule: "OR('Hospital2MSP.peer')"
-    AnchorPeers:
-      - Host: peer0.hospital2.emr.com
-        Port: 9051
-
-  # Regulator Organization
-  - &Regulator
-    Name: RegulatorMSP
-    ID: RegulatorMSP
-    MSPDir: crypto-config/peerOrganizations/regulator.emr.com/msp
-    Policies:
-      Readers:
-        Type: Signature
-        Rule: "OR('RegulatorMSP.admin', 'RegulatorMSP.peer', 'RegulatorMSP.client')"
-      Writers:
-        Type: Signature
-        Rule: "OR('RegulatorMSP.admin', 'RegulatorMSP.client')"
-      Admins:
-        Type: Signature
-        Rule: "OR('RegulatorMSP.admin')"
-      Endorsement:
-        Type: Signature
-        Rule: "OR('RegulatorMSP.peer')"
-    AnchorPeers:
-      - Host: peer0.regulator.emr.com
-        Port: 11051
-
 Capabilities:
   Channel: &ChannelCapabilities
     V2_0: true
@@ -99,14 +50,14 @@ Application: &ApplicationDefaults
   Organizations:
   Policies:
     Readers:
-      Type: ImplicitMeta
-      Rule: "ANY Readers"
+      Type: Signature
+      Rule: "OR('Hospital1MSP.admin', 'Hospital1MSP.peer', 'Hospital1MSP.client')"
     Writers:
-      Type: ImplicitMeta
-      Rule: "ANY Writers"
+      Type: Signature
+      Rule: "OR('Hospital1MSP.admin', 'Hospital1MSP.client')"
     Admins:
-      Type: ImplicitMeta
-      Rule: "MAJORITY Admins"
+      Type: Signature
+      Rule: "OR('Hospital1MSP.member')"
     LifecycleEndorsement:
       Type: ImplicitMeta
       Rule: "MAJORITY Endorsement"
@@ -124,8 +75,8 @@ Orderer: &OrdererDefaults
     Consenters:
       - Host: orderer.emr.com
         Port: 7050
-        ClientTLSCert: crypto-config/ordererOrganizations/emr.com/orderers/orderer.emr.com/tls/server.crt
-        ServerTLSCert: crypto-config/ordererOrganizations/emr.com/orderers/orderer.emr.com/tls/server.crt
+        ClientTLSCert: orderer-runtime/tls/server.crt
+        ServerTLSCert: orderer-runtime/tls/server.crt
   BatchTimeout: 2s
   BatchSize:
     MaxMessageCount: 10
@@ -151,51 +102,21 @@ Orderer: &OrdererDefaults
 Channel: &ChannelDefaults
   Policies:
     Readers:
-      Type: ImplicitMeta
-      Rule: "ANY Readers"
+      Type: Signature
+      Rule: "OR('Hospital1MSP.admin', 'Hospital1MSP.peer', 'Hospital1MSP.client')"
     Writers:
-      Type: ImplicitMeta
-      Rule: "ANY Writers"
+      Type: Signature
+      Rule: "OR('Hospital1MSP.admin', 'Hospital1MSP.client')"
     Admins:
-      Type: ImplicitMeta
-      Rule: "MAJORITY Admins"
+      Type: Signature
+      Rule: "OR('Hospital1MSP.member')"
   Capabilities:
     <<: *ChannelCapabilities
 
 Profiles:
-  # Genesis block profile for system channel
+  # Genesis block profile
   EMROrdererGenesis:
     <<: *ChannelDefaults
-    Orderer:
-      <<: *OrdererDefaults
-      Organizations:
-        - *OrdererOrg
-      Capabilities: *OrdererCapabilities
-    Application:
-      <<: *ApplicationDefaults
-      Organizations:
-        - *Hospital1
-        - *Hospital2
-        - *Regulator
-      Capabilities: *ApplicationCapabilities
-
-  # Channel profile for EMR application channel
-  EMRChannel:
-    Consortium: SampleConsortium
-    <<: *ChannelDefaults
-    Application:
-      <<: *ApplicationDefaults
-      Organizations:
-        - *Hospital1
-        - *Hospital2
-        - *Regulator
-      Capabilities: *ApplicationCapabilities
-
-  # System channel profile
-  SampleMultiNodeEtcdRaft:
-    <<: *ChannelDefaults
-    Capabilities:
-      <<: *ChannelCapabilities
     Orderer:
       <<: *OrdererDefaults
       Organizations:
@@ -206,5 +127,38 @@ Profiles:
       SampleConsortium:
         Organizations:
           - *Hospital1
-          - *Hospital2
-          - *Regulator
+
+  # Channel profile
+  EMRChannel:
+    Consortium: SampleConsortium
+    <<: *ChannelDefaults
+    Orderer:
+      <<: *OrdererDefaults
+      Organizations:
+        - *OrdererOrg
+      Capabilities:
+        <<: *OrdererCapabilities
+    Application:
+      <<: *ApplicationDefaults
+      Organizations:
+        - Name: Hospital1MSP
+          ID: Hospital1MSP
+          MSPDir: crypto-config/peerOrganizations/hospital1.emr.com/msp
+          Policies:
+            Readers:
+              Type: Signature
+              Rule: "OR('Hospital1MSP.admin', 'Hospital1MSP.peer', 'Hospital1MSP.client')"
+            Writers:
+              Type: Signature
+              Rule: "OR('Hospital1MSP.admin', 'Hospital1MSP.client')"
+            Admins:
+              Type: Signature
+              Rule: "OR('Hospital1MSP.admin')"
+            Endorsement:
+              Type: Signature
+              Rule: "OR('Hospital1MSP.peer')"
+          AnchorPeers:
+            - Host: peer0.hospital1.emr.com
+              Port: 7051
+      Capabilities:
+        <<: *ApplicationCapabilities
