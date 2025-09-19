@@ -97,55 +97,18 @@ declare module 'lucide-react' {
   export const Wifi: LucideIcon;
   export const X: LucideIcon;
   export const XCircle: LucideIcon;
-  export const XCircle: LucideIcon;
 
   // Additional icons used in the application
   export const Keyboard: LucideIcon;
   export const Volume2: LucideIcon;
   export const Accessibility: LucideIcon;
   export const ShieldCheck: LucideIcon;
-  export const Palette: LucideIcon;
-  export const ArrowRightLeft: LucideIcon;
-  export const Award: LucideIcon;
-  export const Bot: LucideIcon;
   export const Brain: LucideIcon;
   export const Building: LucideIcon;
-  export const Camera: LucideIcon;
-  export const CheckCheck: LucideIcon;
-  export const CheckCircle2: LucideIcon;
-  export const Cloud: LucideIcon;
-  export const Command: LucideIcon;
-  export const Cpu: LucideIcon;
-  export const Database: LucideIcon;
-  export const Edit3: LucideIcon;
   export const ExternalLink: LucideIcon;
-  export const File: LucideIcon;
-  export const HardDrive: LucideIcon;
-  export const History: LucideIcon;
-  export const Image: LucideIcon;
-  export const ImageIcon: LucideIcon;
-  export const Key: LucideIcon;
-  export const Loader2: LucideIcon;
-  export const MapPin: LucideIcon;
-  export const MessageCircle: LucideIcon;
-  export const Mic: LucideIcon;
-  export const Paperclip: LucideIcon;
-  export const Phone: LucideIcon;
-  export const RefreshCw: LucideIcon;
-  export const SearchX: LucideIcon;
-  export const Send: LucideIcon;
-  export const Server: LucideIcon;
   export const Share2: LucideIcon;
   export const Stethoscope: LucideIcon;
-  export const Thermometer: LucideIcon;
-  export const Trash2: LucideIcon;
-  export const TrendingUp: LucideIcon;
-  export const UserCheck: LucideIcon;
-  export const UserX: LucideIcon;
-  export const Weight: LucideIcon;
-  export const Wifi: LucideIcon;
   export const Zap: LucideIcon;
-  export const Share2: LucideIcon;
 
   // Add any other icons as needed
   const lucideReact: {

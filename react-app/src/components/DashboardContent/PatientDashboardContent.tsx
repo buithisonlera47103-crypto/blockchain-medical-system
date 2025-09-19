@@ -1,488 +1,421 @@
 import {
-  Bell,
+  Heart,
+  Activity,
+  Calendar,
+  User,
+  Shield,
+  AlertTriangle,
+  TrendingUp,
+  FileText,
   Clock,
   CheckCircle,
-  XCircle,
+  Pill,
+  Monitor,
+  Bell,
   Eye,
-  Share2,
-  Shield,
-  User,
-  Calendar,
-  FileText,
-  Download,
-  Lock,
-  Unlock,
+  Download
 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 
 import { useAuth } from '../../contexts/AuthContext';
 
-interface AccessRequest {
-  id: string;
-  requesterId: string;
-  requesterName: string;
-  requesterRole: string;
-  recordId: string;
-  recordTitle: string;
-  action: 'read' | 'write' | 'share';
-  purpose: string;
-  urgency: 'low' | 'medium' | 'high' | 'emergency';
-  requestedAt: string;
-  status: 'pending' | 'approved' | 'rejected';
-  expiresAt?: string;
-}
-
-interface MedicalRecord {
-  id: string;
-  title: string;
-  type: string;
-  department: string;
-  doctor: string;
-  createdAt: string;
-  status: 'active' | 'draft' | 'archived';
-  fileSize: string;
-  description: string;
-  accessCount: number;
-}
-
-interface Permission {
-  id: string;
-  recordId: string;
-  recordTitle: string;
-  granteeId: string;
-  granteeName: string;
-  granteeRole: string;
-  action: 'read' | 'write' | 'share';
-  grantedAt: string;
-  expiresAt?: string;
-  isActive: boolean;
-  accessCount: number;
-}
-
 const PatientDashboardContent: React.FC = () => {
   const { user } = useAuth();
-  // const { t } = useTranslation();
-  const [accessRequests, setAccessRequests] = useState<AccessRequest[]>([]);
-  const [medicalHistory, setMedicalHistory] = useState<MedicalRecord[]>([]);
-  const [permissions, setPermissions] = useState<Permission[]>([]);
   const [loading, setLoading] = useState(true);
+  const [healthData, setHealthData] = useState({
+    heartRate: 72,
+    bloodPressure: { systolic: 120, diastolic: 80 },
+    temperature: 36.5,
+    weight: 65.5,
+    lastCheckup: '2024-01-15',
+    overallScore: 85
+  });
 
-  // Load patient data
+  const [upcomingAppointments] = useState([
+    {
+      id: 1,
+      doctor: '张医生',
+      department: '内科',
+      date: '2024-02-15',
+      time: '14:30',
+      type: '复诊',
+      status: 'confirmed'
+    },
+    {
+      id: 2,
+      doctor: '李医生',
+      department: '眼科',
+      date: '2024-02-20',
+      time: '09:15',
+      type: '检查',
+      status: 'pending'
+    }
+  ]);
+
+  const [recentRecords] = useState([
+    {
+      id: 1,
+      title: '常规体检报告',
+      doctor: '王医生',
+      date: '2024-01-15',
+      type: '体检',
+      status: 'completed'
+    },
+    {
+      id: 2,
+      title: '血常规检查',
+      doctor: '张医生',
+      date: '2024-01-10',
+      type: '检验',
+      status: 'completed'
+    }
+  ]);
+
+  const [notifications] = useState([
+    {
+      id: 1,
+      title: '体检提醒',
+      message: '您的年度体检已经临近，请及时预约',
+      type: 'reminder',
+      time: '2小时前',
+      urgent: false
+    },
+    {
+      id: 2,
+      title: '药物提醒',
+      message: '请按时服用高血压药物',
+      type: 'medication',
+      time: '4小时前',
+      urgent: true
+    }
+  ]);
+
   useEffect(() => {
-    if (!user) return;
-
-    // Mock data for demonstration
-    const mockAccessRequests: AccessRequest[] = [
-      {
-        id: 'req_001',
-        requesterId: 'doc_123',
-        requesterName: '张医生',
-        requesterRole: 'doctor',
-        recordId: 'rec_001',
-        recordTitle: '心电图检查报告',
-        action: 'read',
-        purpose: '诊疗需要',
-        urgency: 'medium',
-        requestedAt: '2024-01-20T10:30:00Z',
-        status: 'pending',
-      },
-      {
-        id: 'req_002',
-        requesterId: 'doc_456',
-        requesterName: '李医生',
-        requesterRole: 'doctor',
-        recordId: 'rec_002',
-        recordTitle: '血液检查报告',
-        action: 'read',
-        purpose: '会诊需要',
-        urgency: 'high',
-        requestedAt: '2024-01-19T14:15:00Z',
-        status: 'pending',
-      },
-    ];
-
-    const mockMedicalHistory: MedicalRecord[] = [
-      {
-        id: 'rec_001',
-        title: '心电图检查报告',
-        type: '检查报告',
-        department: '心内科',
-        doctor: '王医生',
-        createdAt: '2024-01-15T09:00:00Z',
-        status: 'active',
-        fileSize: '2.3MB',
-        description: '心电图检查结果正常',
-        accessCount: 3,
-      },
-      {
-        id: 'rec_002',
-        title: '血液检查报告',
-        type: '检查报告',
-        department: '内科',
-        doctor: '李医生',
-        createdAt: '2024-01-10T11:30:00Z',
-        status: 'active',
-        fileSize: '1.8MB',
-        description: '血常规检查结果',
-        accessCount: 2,
-      },
-      {
-        id: 'rec_003',
-        title: '处方记录',
-        type: '处方',
-        department: '内科',
-        doctor: '张医生',
-        createdAt: '2024-01-08T16:45:00Z',
-        status: 'active',
-        fileSize: '0.5MB',
-        description: '感冒药物处方',
-        accessCount: 1,
-      },
-    ];
-
-    const mockPermissions: Permission[] = [
-      {
-        id: 'perm_001',
-        recordId: 'rec_001',
-        recordTitle: '心电图检查报告',
-        granteeId: 'doc_789',
-        granteeName: '赵医生',
-        granteeRole: 'doctor',
-        action: 'read',
-        grantedAt: '2024-01-16T10:00:00Z',
-        expiresAt: '2024-02-16T10:00:00Z',
-        isActive: true,
-        accessCount: 2,
-      },
-      {
-        id: 'perm_002',
-        recordId: 'rec_002',
-        recordTitle: '血液检查报告',
-        granteeId: 'nurse_001',
-        granteeName: '护士小王',
-        granteeRole: 'nurse',
-        action: 'read',
-        grantedAt: '2024-01-12T14:30:00Z',
-        expiresAt: '2024-01-22T14:30:00Z',
-        isActive: false,
-        accessCount: 1,
-      },
-    ];
-
-    setAccessRequests(mockAccessRequests);
-    setMedicalHistory(mockMedicalHistory);
-    setPermissions(mockPermissions);
-    setLoading(false);
-  }, [user]);
-
-  const handleApproveRequest = async (requestId: string) => {
-    try {
-      // API call to approve request
-      setAccessRequests(prev =>
-        prev.map(req => (req.id === requestId ? { ...req, status: 'approved' as const } : req))
-      );
-    } catch (error) {
-      console.error('Failed to approve request:', error);
-    }
-  };
-
-  const handleRejectRequest = async (requestId: string) => {
-    try {
-      // API call to reject request
-      setAccessRequests(prev =>
-        prev.map(req => (req.id === requestId ? { ...req, status: 'rejected' as const } : req))
-      );
-    } catch (error) {
-      console.error('Failed to reject request:', error);
-    }
-  };
-
-  const handleRevokePermission = async (permissionId: string) => {
-    try {
-      // API call to revoke permission
-      setPermissions(prev =>
-        prev.map(perm => (perm.id === permissionId ? { ...perm, isActive: false } : perm))
-      );
-    } catch (error) {
-      console.error('Failed to revoke permission:', error);
-    }
-  };
-
-  const getUrgencyColor = (urgency: string) => {
-    switch (urgency) {
-      case 'emergency':
-        return 'text-red-600 bg-red-50';
-      case 'high':
-        return 'text-orange-600 bg-orange-50';
-      case 'medium':
-        return 'text-yellow-600 bg-yellow-50';
-      case 'low':
-        return 'text-green-600 bg-green-50';
-      default:
-        return 'text-gray-600 bg-gray-50';
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return 'text-yellow-600 bg-yellow-50';
-      case 'approved':
-        return 'text-green-600 bg-green-50';
-      case 'rejected':
-        return 'text-red-600 bg-red-50';
-      default:
-        return 'text-gray-600 bg-gray-50';
-    }
-  };
+    const timer = setTimeout(() => setLoading(false), 1000);
+    return () => clearTimeout(timer);
+  }, []);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-gray-900 dark:via-slate-900 dark:to-blue-900 flex items-center justify-center">
+        <div className="relative">
+          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-3xl animate-spin"></div>
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-3xl animate-ping"></div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="patient-dashboard space-y-6">
-      {/* Access Requests Section */}
-      <div className="access-requests bg-white rounded-lg shadow-md p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-gray-800 flex items-center">
-            <Bell className="w-5 h-5 mr-2 text-blue-600" />
-            访问请求
-          </h2>
-          <span className="bg-blue-100 text-blue-800 text-sm font-medium px-2.5 py-0.5 rounded">
-            {accessRequests.filter(req => req.status === 'pending').length} 待处理
-          </span>
-        </div>
-
-        <div className="space-y-3">
-          {accessRequests.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">暂无访问请求</p>
-          ) : (
-            accessRequests.map(request => (
-              <div key={request.id} className="border border-gray-200 rounded-lg p-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <User className="w-4 h-4 text-gray-500" />
-                      <span className="font-medium text-gray-800">{request.requesterName}</span>
-                      <span className="text-sm text-gray-500">({request.requesterRole})</span>
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-medium ${getUrgencyColor(request.urgency)}`}
-                      >
-                        {request.urgency}
-                      </span>
-                    </div>
-                    <div className="flex items-center space-x-2 mb-2">
-                      <FileText className="w-4 h-4 text-gray-500" />
-                      <span className="text-gray-700">{request.recordTitle}</span>
-                      <span className="text-sm text-gray-500">({request.action})</span>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-2">{request.purpose}</p>
-                    <div className="flex items-center space-x-2 text-sm text-gray-500">
-                      <Calendar className="w-4 h-4" />
-                      <span>{new Date(request.requestedAt).toLocaleString()}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-2 ml-4">
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(request.status)}`}
-                    >
-                      {request.status === 'pending'
-                        ? '待处理'
-                        : request.status === 'approved'
-                          ? '已批准'
-                          : '已拒绝'}
-                    </span>
-                    {request.status === 'pending' && (
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => handleApproveRequest(request.id)}
-                          className="flex items-center px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700"
-                        >
-                          <CheckCircle className="w-4 h-4 mr-1" />
-                          批准
-                        </button>
-                        <button
-                          onClick={() => handleRejectRequest(request.id)}
-                          className="flex items-center px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
-                        >
-                          <XCircle className="w-4 h-4 mr-1" />
-                          拒绝
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-gray-900 dark:via-slate-900 dark:to-blue-900">
+      {/* 现代化背景装饰 */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-32 -right-32 w-96 h-96 bg-gradient-to-br from-blue-500/8 via-indigo-500/8 to-cyan-500/8 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute top-1/3 -left-32 w-64 h-64 bg-gradient-to-br from-emerald-500/8 to-teal-500/8 rounded-full blur-2xl animate-pulse delay-700"></div>
+        <div className="absolute -bottom-32 right-1/3 w-80 h-80 bg-gradient-to-br from-orange-500/6 to-amber-500/6 rounded-full blur-3xl animate-pulse delay-1400"></div>
       </div>
 
-      {/* Medical History Section */}
-      <div className="medical-history bg-white rounded-lg shadow-md p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-gray-800 flex items-center">
-            <FileText className="w-5 h-5 mr-2 text-green-600" />
-            医疗记录
-          </h2>
-          <span className="bg-green-100 text-green-800 text-sm font-medium px-2.5 py-0.5 rounded">
-            {medicalHistory.length} 条记录
-          </span>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {medicalHistory.map(record => (
-            <div
-              key={record.id}
-              className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <h3 className="font-medium text-gray-800 text-sm">{record.title}</h3>
-                <span className="text-xs text-gray-500">{record.fileSize}</span>
-              </div>
-
-              <div className="space-y-2 text-sm text-gray-600">
-                <div className="flex items-center">
-                  <span className="w-16 text-gray-500">类型:</span>
-                  <span>{record.type}</span>
-                </div>
-                <div className="flex items-center">
-                  <span className="w-16 text-gray-500">科室:</span>
-                  <span>{record.department}</span>
-                </div>
-                <div className="flex items-center">
-                  <span className="w-16 text-gray-500">医生:</span>
-                  <span>{record.doctor}</span>
-                </div>
-                <div className="flex items-center">
-                  <span className="w-16 text-gray-500">日期:</span>
-                  <span>{new Date(record.createdAt).toLocaleDateString()}</span>
-                </div>
-                <div className="flex items-center">
-                  <span className="w-16 text-gray-500">访问:</span>
-                  <span>{record.accessCount} 次</span>
-                </div>
-              </div>
-
-              <p className="text-sm text-gray-600 mt-2 line-clamp-2">{record.description}</p>
-
-              <div className="flex items-center justify-between mt-4">
-                <span
-                  className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    record.status === 'active'
-                      ? 'bg-green-100 text-green-800'
-                      : record.status === 'draft'
-                        ? 'bg-yellow-100 text-yellow-800'
-                        : 'bg-gray-100 text-gray-800'
-                  }`}
-                >
-                  {record.status === 'active'
-                    ? '活跃'
-                    : record.status === 'draft'
-                      ? '草稿'
-                      : '已归档'}
-                </span>
-
-                <div className="flex space-x-2">
-                  <button className="p-1 text-gray-500 hover:text-blue-600">
-                    <Eye className="w-4 h-4" />
-                  </button>
-                  <button className="p-1 text-gray-500 hover:text-green-600">
-                    <Download className="w-4 h-4" />
-                  </button>
-                  <button className="p-1 text-gray-500 hover:text-purple-600">
-                    <Share2 className="w-4 h-4" />
-                  </button>
+      <div className="relative p-6 space-y-8">
+        {/* 欢迎区域 */}
+        <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-gray-200/50 dark:border-gray-700/50">
+          <div className="flex items-center justify-between">
+            <div className="space-y-2">
+              <h1 className="text-4xl lg:text-5xl font-bold bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-600 bg-clip-text text-transparent">
+                您好，{user?.username || '患者'}！
+              </h1>
+              <p className="text-xl text-gray-600 dark:text-gray-400">
+                欢迎回到您的个人健康管理中心
+              </p>
+              <div className="flex items-center space-x-3 mt-4">
+                <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-sm font-semibold text-green-600 dark:text-green-400">系统状态正常</span>
+                <div className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-sm font-semibold">
+                  最后登录：今天 09:30
                 </div>
               </div>
             </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Permission Control Section */}
-      <div className="permission-control bg-white rounded-lg shadow-md p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-gray-800 flex items-center">
-            <Shield className="w-5 h-5 mr-2 text-purple-600" />
-            权限管理
-          </h2>
-          <span className="bg-purple-100 text-purple-800 text-sm font-medium px-2.5 py-0.5 rounded">
-            {permissions.filter(perm => perm.isActive).length} 个活跃权限
-          </span>
+            <div className="hidden lg:block">
+              <div className="p-6 bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-3xl">
+                <Heart className="w-20 h-20 text-blue-500 dark:text-blue-400" />
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="space-y-3">
-          {permissions.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">暂无权限记录</p>
-          ) : (
-            permissions.map(permission => (
-              <div key={permission.id} className="border border-gray-200 rounded-lg p-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <User className="w-4 h-4 text-gray-500" />
-                      <span className="font-medium text-gray-800">{permission.granteeName}</span>
-                      <span className="text-sm text-gray-500">({permission.granteeRole})</span>
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          permission.isActive
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}
-                      >
-                        {permission.isActive ? '活跃' : '已撤销'}
-                      </span>
-                    </div>
-                    <div className="flex items-center space-x-2 mb-2">
-                      <FileText className="w-4 h-4 text-gray-500" />
-                      <span className="text-gray-700">{permission.recordTitle}</span>
-                      <span className="text-sm text-gray-500">({permission.action})</span>
-                    </div>
-                    <div className="flex items-center space-x-4 text-sm text-gray-500">
-                      <div className="flex items-center space-x-1">
-                        <Calendar className="w-4 h-4" />
-                        <span>授权: {new Date(permission.grantedAt).toLocaleDateString()}</span>
-                      </div>
-                      {permission.expiresAt && (
-                        <div className="flex items-center space-x-1">
-                          <Clock className="w-4 h-4" />
-                          <span>过期: {new Date(permission.expiresAt).toLocaleDateString()}</span>
-                        </div>
-                      )}
-                      <div className="flex items-center space-x-1">
-                        <Eye className="w-4 h-4" />
-                        <span>访问: {permission.accessCount} 次</span>
-                      </div>
-                    </div>
+        {/* 健康状态概览 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* 心率 */}
+          <div className="group relative overflow-hidden bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl rounded-3xl p-6 shadow-2xl hover:shadow-3xl hover:scale-[1.02] hover:-translate-y-1 transition-all duration-300 border border-gray-200/50 dark:border-gray-700/50">
+            <div className="absolute inset-0 bg-gradient-to-br from-red-500/5 to-pink-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div className="relative space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="p-3 bg-gradient-to-br from-red-500 to-pink-600 rounded-2xl shadow-xl group-hover:scale-110 transition-transform duration-300">
+                  <Heart className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-sm text-gray-500 dark:text-gray-400">实时</span>
+              </div>
+              <div>
+                <div className="text-3xl font-bold text-gray-900 dark:text-white">
+                  {healthData.heartRate}
+                </div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">次/分钟</div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-sm text-green-600 dark:text-green-400 font-semibold">正常</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 血压 */}
+          <div className="group relative overflow-hidden bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl rounded-3xl p-6 shadow-2xl hover:shadow-3xl hover:scale-[1.02] hover:-translate-y-1 transition-all duration-300 border border-gray-200/50 dark:border-gray-700/50">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-indigo-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div className="relative space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl shadow-xl group-hover:scale-110 transition-transform duration-300">
+                  <Activity className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-sm text-gray-500 dark:text-gray-400">最新</span>
+              </div>
+              <div>
+                <div className="text-3xl font-bold text-gray-900 dark:text-white">
+                  {healthData.bloodPressure.systolic}/{healthData.bloodPressure.diastolic}
+                </div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">mmHg</div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-sm text-green-600 dark:text-green-400 font-semibold">理想</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 体重 */}
+          <div className="group relative overflow-hidden bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl rounded-3xl p-6 shadow-2xl hover:shadow-3xl hover:scale-[1.02] hover:-translate-y-1 transition-all duration-300 border border-gray-200/50 dark:border-gray-700/50">
+            <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-teal-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div className="relative space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="p-3 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl shadow-xl group-hover:scale-110 transition-transform duration-300">
+                  <TrendingUp className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-sm text-gray-500 dark:text-gray-400">今日</span>
+              </div>
+              <div>
+                <div className="text-3xl font-bold text-gray-900 dark:text-white">
+                  {healthData.weight}
+                </div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">公斤</div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-sm text-green-600 dark:text-green-400 font-semibold">标准</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 健康评分 */}
+          <div className="group relative overflow-hidden bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl rounded-3xl p-6 shadow-2xl hover:shadow-3xl hover:scale-[1.02] hover:-translate-y-1 transition-all duration-300 border border-gray-200/50 dark:border-gray-700/50">
+            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-indigo-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div className="relative space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="p-3 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-2xl shadow-xl group-hover:scale-110 transition-transform duration-300">
+                  <Shield className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-sm text-gray-500 dark:text-gray-400">评估</span>
+              </div>
+              <div>
+                <div className="text-3xl font-bold text-gray-900 dark:text-white">
+                  {healthData.overallScore}
+                </div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">健康评分</div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-sm text-green-600 dark:text-green-400 font-semibold">优秀</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 内容区域 */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* 左侧：即将到来的预约 */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl rounded-3xl p-6 shadow-2xl border border-gray-200/50 dark:border-gray-700/50">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center space-x-3">
+                  <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl shadow-xl">
+                    <Calendar className="w-6 h-6 text-white" />
                   </div>
-
-                  <div className="flex items-center space-x-2 ml-4">
-                    {permission.isActive ? (
-                      <button
-                        onClick={() => handleRevokePermission(permission.id)}
-                        className="flex items-center px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
-                      >
-                        <Lock className="w-4 h-4 mr-1" />
-                        撤销
-                      </button>
-                    ) : (
-                      <span className="flex items-center px-3 py-1 bg-gray-100 text-gray-500 text-sm rounded">
-                        <Unlock className="w-4 h-4 mr-1" />
-                        已撤销
-                      </span>
-                    )}
+                  <div>
+                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white">即将到来的预约</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">您的医疗预约安排</p>
                   </div>
                 </div>
+                <button className="px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-xl hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors text-sm font-semibold">
+                  查看全部
+                </button>
               </div>
-            ))
-          )}
+
+              <div className="space-y-4">
+                {upcomingAppointments.map((appointment) => (
+                  <div key={appointment.id} className="group relative overflow-hidden bg-gradient-to-r from-blue-50/50 to-indigo-50/50 dark:from-gray-700/50 dark:to-gray-600/50 rounded-2xl p-4 hover:shadow-lg transition-all duration-300 border border-gray-200/30 dark:border-gray-600/30">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
+                        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white font-bold">
+                          {appointment.doctor.charAt(0)}
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-gray-900 dark:text-white">{appointment.doctor}</h4>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">{appointment.department} · {appointment.type}</p>
+                          <div className="flex items-center space-x-2 mt-1">
+                            <Clock className="w-4 h-4 text-gray-400" />
+                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                              {appointment.date} {appointment.time}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                          appointment.status === 'confirmed' 
+                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                            : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                        }`}>
+                          {appointment.status === 'confirmed' ? '已确认' : '待确认'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 最近的医疗记录 */}
+            <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl rounded-3xl p-6 shadow-2xl border border-gray-200/50 dark:border-gray-700/50">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center space-x-3">
+                  <div className="p-3 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl shadow-xl">
+                    <FileText className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white">最近医疗记录</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">您的最新检查报告</p>
+                  </div>
+                </div>
+                <button className="px-4 py-2 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 rounded-xl hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors text-sm font-semibold">
+                  查看全部
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {recentRecords.map((record) => (
+                  <div key={record.id} className="group relative overflow-hidden bg-gradient-to-r from-emerald-50/50 to-teal-50/50 dark:from-gray-700/50 dark:to-gray-600/50 rounded-2xl p-4 hover:shadow-lg transition-all duration-300 border border-gray-200/30 dark:border-gray-600/30">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
+                        <div className="p-3 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl">
+                          <FileText className="w-5 h-5 text-white" />
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-gray-900 dark:text-white">{record.title}</h4>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">{record.doctor} · {record.type}</p>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">{record.date}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <CheckCircle className="w-5 h-5 text-green-500" />
+                        <button className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors">
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button className="p-2 text-gray-400 hover:text-green-600 dark:hover:text-green-400 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors">
+                          <Download className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* 右侧：通知和提醒 */}
+          <div className="space-y-6">
+            <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl rounded-3xl p-6 shadow-2xl border border-gray-200/50 dark:border-gray-700/50">
+              <div className="flex items-center space-x-3 mb-6">
+                <div className="p-3 bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl shadow-xl">
+                  <Bell className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900 dark:text-white">健康提醒</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">重要通知</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {notifications.map((notification) => (
+                  <div key={notification.id} className={`group relative overflow-hidden rounded-2xl p-4 border transition-all duration-300 hover:shadow-lg ${
+                    notification.urgent 
+                      ? 'bg-gradient-to-r from-red-50/50 to-orange-50/50 dark:from-red-900/20 dark:to-orange-900/20 border-red-200/50 dark:border-red-700/50'
+                      : 'bg-gradient-to-r from-blue-50/50 to-indigo-50/50 dark:from-gray-700/50 dark:to-gray-600/50 border-blue-200/50 dark:border-gray-600/50'
+                  }`}>
+                    <div className="flex items-start space-x-3">
+                      {notification.urgent ? (
+                        <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
+                      ) : (
+                        <Bell className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-semibold text-gray-900 dark:text-white text-sm">
+                          {notification.title}
+                        </h4>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                          {notification.message}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
+                          {notification.time}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 快速操作 */}
+            <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl rounded-3xl p-6 shadow-2xl border border-gray-200/50 dark:border-gray-700/50">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">快速操作</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <button className="group relative overflow-hidden bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-2xl p-4 hover:shadow-xl hover:scale-[1.02] transition-all duration-300">
+                  <div className="absolute inset-0 bg-gradient-to-r from-white/10 to-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <div className="relative text-center">
+                    <Calendar className="w-8 h-8 mx-auto mb-2" />
+                    <span className="text-sm font-semibold">预约挂号</span>
+                  </div>
+                </button>
+                <button className="group relative overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-2xl p-4 hover:shadow-xl hover:scale-[1.02] transition-all duration-300">
+                  <div className="absolute inset-0 bg-gradient-to-r from-white/10 to-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <div className="relative text-center">
+                    <Pill className="w-8 h-8 mx-auto mb-2" />
+                    <span className="text-sm font-semibold">处方管理</span>
+                  </div>
+                </button>
+                <button className="group relative overflow-hidden bg-gradient-to-br from-purple-500 to-indigo-600 text-white rounded-2xl p-4 hover:shadow-xl hover:scale-[1.02] transition-all duration-300">
+                  <div className="absolute inset-0 bg-gradient-to-r from-white/10 to-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <div className="relative text-center">
+                    <Monitor className="w-8 h-8 mx-auto mb-2" />
+                    <span className="text-sm font-semibold">健康监测</span>
+                  </div>
+                </button>
+                <button className="group relative overflow-hidden bg-gradient-to-br from-orange-500 to-amber-600 text-white rounded-2xl p-4 hover:shadow-xl hover:scale-[1.02] transition-all duration-300">
+                  <div className="absolute inset-0 bg-gradient-to-r from-white/10 to-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <div className="relative text-center">
+                    <User className="w-8 h-8 mx-auto mb-2" />
+                    <span className="text-sm font-semibold">在线咨询</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

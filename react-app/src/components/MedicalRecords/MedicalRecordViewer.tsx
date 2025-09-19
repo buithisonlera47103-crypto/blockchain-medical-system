@@ -19,15 +19,11 @@ import {
   Tag,
   Timeline,
   Divider,
-  Input,
-  Checkbox,
-  Progress,
 } from 'antd';
 import React, { useState, useEffect, useCallback } from 'react';
 
 
 import { useAuth } from '../../contexts/AuthContext';
-import ipfsService from '../../services/ipfsService';
 import { apiRequest } from '../../utils/api';
 import { formatDateTime, formatFileSize } from '../../utils/format';
 
@@ -93,17 +89,10 @@ const MedicalRecordViewer: React.FC<MedicalRecordViewerProps> = ({
   const [versionHistory, setVersionHistory] = useState<VersionHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
-  const [ipfsProgress, setIpfsProgress] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [showContent, setShowContent] = useState(false);
-
-  // IPFS 本地解密密钥模态框状态
-  const [keyModalOpen, setKeyModalOpen] = useState(false);
-  const [decryptChoice, setDecryptChoice] = useState(true);
-  const [keyInput, setKeyInput] = useState('');
-  const [keyError, setKeyError] = useState<string | null>(null);
 
   /**
    * 获取病历详情
@@ -176,17 +165,17 @@ const MedicalRecordViewer: React.FC<MedicalRecordViewerProps> = ({
     try {
       setDownloading(true);
 
-      const response = await fetch(`/api/v1/records/${recordId}/download`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('下载失败');
+      // 通过后端内容端点获取 Base64 数据并转为 Blob 下载
+      const json = await apiRequest(`/api/v1/records/${recordId}/content`);
+      const base64: string = json.data || json.content;
+      if (!base64) {
+        throw new Error('下载失败：无可用内容');
       }
+      const byteChars = atob(base64);
+      const bytes = new Uint8Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+      const blob = new Blob([bytes], { type: 'application/octet-stream' });
 
-      const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -202,51 +191,7 @@ const MedicalRecordViewer: React.FC<MedicalRecordViewerProps> = ({
     }
   };
 
-  /**
-   * 通过 IPFS 下载文件（可选本地解密）
-   */
-  const doIpfsDownload = async (decrypt: boolean, encryptionKey?: string) => {
-    try {
-      if (!record?.ipfsCid) {
-        setError('未找到IPFS CID');
-        return;
-      }
-      setDownloading(true);
-      setIpfsProgress(0);
-      const { content } = await ipfsService.downloadFile(record.ipfsCid, {
-        decrypt,
-        encryptionKey,
-        progress: (bytes) => setIpfsProgress(bytes),
-      });
-      const url = window.URL.createObjectURL(content);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${record.title || 'medical-record'}-${record.recordId}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    } catch (e: any) {
-      setError(e?.message ?? 'IPFS 下载失败');
-    } finally {
-      setDownloading(false);
-    }
-  };
 
-  const startIpfsDownload = () => {
-    if (!record?.ipfsCid) {
-      setError('未找到IPFS CID');
-      return;
-    }
-    if (record.isEncrypted) {
-      setDecryptChoice(true);
-      setKeyInput('');
-      setKeyError(null);
-      setKeyModalOpen(true);
-    } else {
-      void doIpfsDownload(false);
-    }
-  };
 
 
   /**
@@ -257,7 +202,7 @@ const MedicalRecordViewer: React.FC<MedicalRecordViewerProps> = ({
       setLoading(true);
 
       const response = await apiRequest(`/api/v1/records/${recordId}/content`);
-      setFileContent(response.content);
+      setFileContent(response.data || response.content);
       setShowContent(true);
     } catch (error: any) {
       console.error('无法预览此文件类型', error);
@@ -546,30 +491,7 @@ const MedicalRecordViewer: React.FC<MedicalRecordViewerProps> = ({
             >
               后端下载
             </Button>
-            <Button
-              icon={<DownloadOutlined />}
-              onClick={startIpfsDownload}
-              disabled={!hasReadPermission || !record.ipfsCid}
-              loading={downloading}
-            >
-              通过 IPFS 下载
-            </Button>
-            {downloading && (
-              <Space>
-                <Text type="secondary">
-                  已下载: {formatFileSize(ipfsProgress)}
-                </Text>
-                {record.fileSize > 0 && (
-                  <div style={{ width: 160 }}>
-                    <Progress
-                      percent={Math.min(100, Math.round((ipfsProgress / record.fileSize) * 100))}
-                      size="small"
-                      status="active"
-                    />
-                  </div>
-                )}
-              </Space>
-            )}
+
             <Button
               icon={<ShareAltOutlined />}
               onClick={() => {
@@ -591,67 +513,7 @@ const MedicalRecordViewer: React.FC<MedicalRecordViewerProps> = ({
       {renderContentPreview()}
       {renderVersionHistoryModal()}
 
-      {/* IPFS 解密密钥输入模态框 */}
-      <Modal
-        title="通过 IPFS 下载"
-        open={keyModalOpen}
-        onCancel={() => setKeyModalOpen(false)}
-        onOk={async () => {
-          setKeyError(null);
-          if (decryptChoice) {
-            if (!keyInput.trim()) {
-              setKeyError('请输入Base64编码的解密密钥');
-              return;
-            }
-            // Base64 粗略校验
-            const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-            if (!base64Regex.test(keyInput.trim())) {
-              setKeyError('密钥格式错误：请提供Base64编码字符串');
-              return;
-            }
-          }
-          setKeyModalOpen(false);
-          await doIpfsDownload(decryptChoice, decryptChoice ? keyInput.trim() : undefined);
-        }}
-        okText={decryptChoice ? '解密并下载' : '直接下载'}
-      >
-        {record?.isEncrypted ? (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Checkbox
-              checked={decryptChoice}
-              onChange={e => setDecryptChoice(e.target.checked)}
-            >
-              本地解密后下载
-            </Checkbox>
-            {decryptChoice && (
-              <>
-                <Input.TextArea
-                  rows={4}
-                  placeholder="请输入Base64编码的解密密钥"
-                  value={keyInput}
-                  onChange={e => setKeyInput(e.target.value)}
-                />
-                <input
-                  type="file"
-                  accept=".txt,.key"
-                  onChange={async (e) => {
-                    const f = e.target.files?.[0];
-                    if (!f) return;
-                    const text = await f.text();
-                    setKeyInput(text.trim());
-                  }}
-                />
-                {keyError && <Alert type="error" message={keyError} />}
-              </>
-            )}
-            {!decryptChoice && (
-              <Alert type="info" message="将直接下载原始IPFS内容（如为加密内容，将保持加密状态）" />
-            )}
-          </Space>
-        ) : (
-          <Alert type="info" message="此文件未加密，将直接从IPFS下载" />
-        )}
-      </Modal>
+
     </div>
   );
 };

@@ -2,7 +2,7 @@
  * 诊断工具 - 用于排查认证和路由问题
  */
 
-import api from './api';
+import { apiRequest } from './apiClient';
 import { getToken, getUser, isTokenValid } from './tokenManager';
 
 interface DiagnosticResult {
@@ -258,12 +258,12 @@ const checkAPIConnection = async (): Promise<DiagnosticResult> => {
     const token = getToken();
     if (token) {
       try {
-        const verifyResponse = await api.get('/auth/verify');
+        const auth = await apiRequest('/api/v1/auth/verify');
         return {
           category: 'API连接',
           status: 'success',
           message: 'API连接正常，认证验证成功',
-          details: { health: healthData, auth: verifyResponse.data },
+          details: { health: healthData, auth },
         };
       } catch (authError: any) {
         return {

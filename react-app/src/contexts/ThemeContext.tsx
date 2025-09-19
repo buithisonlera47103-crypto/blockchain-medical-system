@@ -1,11 +1,11 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
-import { Theme } from '../types';
+type Theme = 'light' | 'dark';
 
 interface ThemeContextType {
   theme: Theme;
   toggleTheme: () => void;
-  isDark: boolean;
+  setTheme: (theme: Theme) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -23,43 +23,54 @@ interface ThemeProviderProps {
 }
 
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
-  const [theme, setTheme] = useState<Theme>('light');
+  const [theme, setThemeState] = useState<Theme>(() => {
+    // 从localStorage获取保存的主题，默认为light
+    const savedTheme = localStorage.getItem('theme') as Theme;
+    return savedTheme || 'light';
+  });
 
   useEffect(() => {
-    // 从本地存储获取主题设置
-    const savedTheme = localStorage.getItem('emr_theme') as Theme;
-    if (savedTheme) {
-      setTheme(savedTheme);
-    } else {
-      // 检查系统偏好（测试环境下matchMedia可能不存在）
-      const prefersDark = typeof window.matchMedia === 'function'
-        ? window.matchMedia('(prefers-color-scheme: dark)').matches
-        : false;
-      setTheme(prefersDark ? 'dark' : 'light');
-    }
-  }, []);
-
-  useEffect(() => {
-    // 应用主题到document
+    // 保存主题到localStorage
+    localStorage.setItem('theme', theme);
+    
+    // 更新document的class来应用主题
+    document.documentElement.className = theme;
+    
+    // 更新CSS变量
     if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
+      document.documentElement.style.setProperty('--bg-primary', '#1a1a1a');
+      document.documentElement.style.setProperty('--bg-secondary', '#2d2d2d');
+      document.documentElement.style.setProperty('--text-primary', '#ffffff');
+      document.documentElement.style.setProperty('--text-secondary', '#cccccc');
+      document.documentElement.style.setProperty('--border-color', '#404040');
     } else {
-      document.documentElement.classList.remove('dark');
+      document.documentElement.style.setProperty('--bg-primary', '#ffffff');
+      document.documentElement.style.setProperty('--bg-secondary', '#f8f9fa');
+      document.documentElement.style.setProperty('--text-primary', '#333333');
+      document.documentElement.style.setProperty('--text-secondary', '#666666');
+      document.documentElement.style.setProperty('--border-color', '#e0e0e0');
     }
-
-    // 保存到本地存储
-    localStorage.setItem('emr_theme', theme);
   }, [theme]);
 
-  const toggleTheme = useCallback(() => {
-    setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
-  }, []);
+  const toggleTheme = () => {
+    setThemeState(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
+  };
 
-  const value: ThemeContextType = useMemo(() => ({
+  const setTheme = (newTheme: Theme) => {
+    setThemeState(newTheme);
+  };
+
+  const value = {
     theme,
     toggleTheme,
-    isDark: theme === 'dark',
-  }), [theme, toggleTheme]);
+    setTheme
+  };
 
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+  return (
+    <ThemeContext.Provider value={value}>
+      {children}
+    </ThemeContext.Provider>
+  );
 };
+
+export default ThemeContext;

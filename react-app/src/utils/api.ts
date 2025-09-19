@@ -21,7 +21,7 @@ api.interceptors.request.use(
     return config;
   },
   error => {
-    return Promise.reject(error);
+    return Promise.reject(error instanceof Error ? error : new Error(String(error)));
   }
 );
 
@@ -37,7 +37,7 @@ api.interceptors.response.use(
       localStorage.removeItem('emr_user');
       window.location.href = '/login';
     }
-    return Promise.reject(error);
+    return Promise.reject(error instanceof Error ? error : new Error(String(error)));
   }
 );
 
@@ -331,17 +331,7 @@ export const bridgeAPI = {
   },
 };
 
-// 通用的API请求函数
-export const apiRequest = async (url: string, options?: any): Promise<any> => {
-  try {
-    const response =
-      options?.method === 'POST' || options
-        ? await api.request({ url, ...options })
-        : await api.get(url);
-    return response.data;
-  } catch (error: any) {
-    throw new Error(error.response?.data?.message || error.message || 'API request failed');
-  }
-};
+// 统一委托至类型安全的 apiClient 实现，避免重复代码
+export { apiRequest } from './apiClient';
 
 export default api;

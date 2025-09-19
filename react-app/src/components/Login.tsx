@@ -5,8 +5,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { PulseLoader } from 'react-spinners';
 import { toast } from 'react-toastify';
 
-import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { runDiagnostics, exportDiagnosticReport } from '../utils/diagnostics';
 
 type LoginFormData = {

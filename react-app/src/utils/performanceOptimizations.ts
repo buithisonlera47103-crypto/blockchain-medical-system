@@ -260,7 +260,7 @@ export function initializePerformanceMonitoring(): void {
 }
 
 // Export all utilities
-export default {
+const performanceOptimizations = {
   BundleSizeAnalyzer,
   PerformanceMonitor,
   ResourcePreloader,
@@ -268,3 +268,5 @@ export default {
   ServiceWorkerManager,
   initializePerformanceMonitoring
 };
+
+export default performanceOptimizations;

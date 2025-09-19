@@ -12,7 +12,7 @@ import {
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 import { cn } from '../../lib/utils';
-import { getMemoryUsage, getDevicePerformance, getNetworkQuality } from '../../utils/performance';
+import { getMemoryUsage, getDevicePerformance, getNetworkQuality } from '../../services/performance';
 
 export interface PerformanceMetrics {
   fps: number;
@@ -90,9 +90,8 @@ const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
   const updateMetrics = useCallback(() => {
     const memory = getMemoryUsage();
     const network = getNetworkQuality();
-    const loadTime = performance.timing
-      ? performance.timing.loadEventEnd - performance.timing.navigationStart
-      : 0;
+    const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+    const loadTime = nav ? nav.loadEventEnd : 0;
 
     // 测量渲染时间
     renderStartRef.current = performance.now();
@@ -210,8 +209,11 @@ const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
       )}
     >
       {/* 紧凑模式头部 */}
-      <div
-        className="flex items-center space-x-2 p-2 cursor-pointer"
+      <button
+        type="button"
+        aria-label="切换性能监控面板"
+        aria-expanded={isExpanded}
+        className="flex items-center space-x-2 p-2 cursor-pointer w-full text-left"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <Activity className="h-4 w-4 text-green-400" />
@@ -251,7 +253,7 @@ const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
         <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} className="text-gray-400">
           ▼
         </motion.div>
-      </div>
+      </button>
 
       {/* 详细指标面板 */}
       <AnimatePresence>

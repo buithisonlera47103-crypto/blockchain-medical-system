@@ -19,8 +19,6 @@ import { RcFile, UploadChangeParam } from 'antd/es/upload';
 import React, { useState, useCallback } from 'react';
 
 import { useAuth } from '../../contexts/AuthContext';
-import { blockchainService } from '../../services/blockchainService';
-import { ipfsService } from '../../services/ipfsService';
 import { UploadFormData } from '../../types';
 import { apiRequest } from '../../utils/api';
 
@@ -135,58 +133,11 @@ const MedicalRecordUpload: React.FC<MedicalRecordUploadProps> = ({
     try {
       const fileToUpload = file.originFileObj || (file as RcFile);
 
-      // 步骤1: 初始化IPFS服务
-      message.loading('正在初始化IPFS服务...', 0);
-      const ipfsInitialized = await ipfsService.initialize();
-      if (!ipfsInitialized) {
-        throw new Error('IPFS服务初始化失败');
-      }
-      message.destroy();
-
-      // 步骤2: 上传到IPFS并加密
-      message.loading('正在上传文件到IPFS...', 0);
-      const ipfsResult = await ipfsService.uploadFile(fileToUpload, {
-        encrypt: encryptionEnabled,
-        pin: true,
-        progress: (uploaded, total) => {
-          const percent = Math.round((uploaded / total) * 100);
-          setIpfsProgress(percent);
-        },
-      });
-      message.destroy();
-
-      if (!ipfsResult.cid) {
-        throw new Error('IPFS上传失败');
-      }
-
+      // 由后端统一处理：加密、IPFS 上传与区块链记录
       setIpfsProgress(100);
-      message.success('文件上传到IPFS成功');
-
-      // 步骤3: 记录到区块链
-      message.loading('正在记录到区块链...', 0);
-      setBlockchainProgress(20);
-
-      const recordData = {
-        recordId: `med-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
-        patientId: values.patientId,
-        creatorId: user?.id || '',
-        ipfsCid: ipfsResult.cid,
-        contentHash: ipfsResult.hash,
-        versionHash: ipfsResult.hash,
-      };
-
-      const blockchainResponse = await blockchainService.createRecord(recordData);
-      setBlockchainProgress(60);
-
-      if (!blockchainResponse.success) {
-        throw new Error(blockchainResponse.error || '区块链记录失败');
-      }
-
       setBlockchainProgress(100);
-      message.destroy();
-      message.success('区块链记录创建成功');
 
-      // 步骤4: 保存到后端数据库
+      // 保存到后端数据库
       message.loading('正在保存病历信息...', 0);
 
 
