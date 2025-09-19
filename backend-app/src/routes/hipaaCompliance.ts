@@ -6,12 +6,12 @@ import express, { Response, NextFunction } from 'express';
 import { body, query } from 'express-validator';
 
 import { asyncHandler } from '../middleware/asyncHandler';
-import { enhancedAuthenticateToken } from '../middleware/enhancedAuth';
+import { authenticateToken } from '../middleware/auth';
 import { validateInput } from '../middleware/validation';
 import { HIPAAComplianceService } from '../services/HIPAAComplianceService';
 import { AuthenticatedRequest } from '../types/express-extensions';
 import ApiResponseBuilder from '../utils/ApiResponseBuilder';
-import { SecurityError, ValidationError } from '../utils/EnhancedAppError';
+import { AppError } from '../utils/AppError';
 import { logger } from '../utils/logger';
 
 const router = express.Router();
@@ -119,7 +119,7 @@ interface HIPAAViolation {
  */
 router.post(
   '/audit-log',
-  enhancedAuthenticateToken,
+  authenticateToken,
   [
     body('action')
       .notEmpty()
@@ -142,7 +142,7 @@ router.post(
     async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
       try {
         if (!req.user) {
-          throw new SecurityError('用户未认证');
+          throw new AppError('用户未认证', 401);
         }
 
         const {
@@ -247,7 +247,7 @@ router.post(
  */
 router.get(
   '/compliance-report',
-  enhancedAuthenticateToken,
+  authenticateToken,
   [
     query('startDate').isISO8601().withMessage('开始日期格式错误'),
     query('endDate').isISO8601().withMessage('结束日期格式错误'),
@@ -257,19 +257,19 @@ router.get(
     async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
       try {
         if (!req.user) {
-          throw new SecurityError('用户未认证');
+          throw new AppError('用户未认证', 401);
         }
 
         // 检查管理员权限
         if (req.user.role !== 'admin' && req.user.role !== 'compliance_officer') {
-          throw new SecurityError('只有管理员可以生成合规报告');
+          throw new AppError('只有管理员可以生成合规报告', 403);
         }
 
         const startDate = new Date(req.query.startDate as string);
         const endDate = new Date(req.query.endDate as string);
 
         if (startDate >= endDate) {
-          throw new ValidationError('开始日期必须早于结束日期');
+          throw new AppError('开始日期必须早于结束日期', 400);
         }
 
         logger.info('生成HIPAA合规报告', {
@@ -328,17 +328,17 @@ router.get(
  */
 router.post(
   '/data-retention',
-  enhancedAuthenticateToken,
+  authenticateToken,
   asyncHandler(
     async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
       try {
         if (!req.user) {
-          throw new SecurityError('用户未认证');
+          throw new AppError('用户未认证', 401);
         }
 
         // 检查管理员权限
         if (req.user.role !== 'admin' && req.user.role !== 'compliance_officer') {
-          throw new SecurityError('只有管理员可以执行数据保留策略');
+          throw new AppError('只有管理员可以执行数据保留策略', 403);
         }
 
         logger.info('手动执行数据保留策略', {
@@ -420,7 +420,7 @@ router.post(
  */
 router.post(
   '/validate-data-minimization',
-  enhancedAuthenticateToken,
+  authenticateToken,
   [
     body('requestedData')
       .isArray()
@@ -433,7 +433,7 @@ router.post(
     async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
       try {
         if (!req.user) {
-          throw new SecurityError('用户未认证');
+          throw new AppError('用户未认证', 401);
         }
 
         const { requestedData } = req.body;
@@ -523,7 +523,7 @@ router.post(
  */
 router.get(
   '/violations',
-  enhancedAuthenticateToken,
+  authenticateToken,
   [
     query('severity')
       .optional()
@@ -543,12 +543,12 @@ router.get(
     async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
       try {
         if (!req.user) {
-          throw new SecurityError('用户未认证');
+          throw new AppError('用户未认证', 401);
         }
 
         // 检查管理员权限
         if (req.user.role !== 'admin' && req.user.role !== 'compliance_officer') {
-          throw new SecurityError('只有管理员可以查看违规记录');
+          throw new AppError('只有管理员可以查看违规记录', 403);
         }
 
         const { severity, status, limit = '50' } = req.query;

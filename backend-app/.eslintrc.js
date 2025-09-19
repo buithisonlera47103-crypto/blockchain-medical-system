@@ -12,7 +12,7 @@ module.exports = {
   parserOptions: {
     ecmaVersion: 2022,
     sourceType: 'module',
-    project: './tsconfig.json',
+    project: './tsconfig.eslint.json',
     tsconfigRootDir: __dirname,
   },
   env: {
@@ -24,7 +24,7 @@ module.exports = {
     'import/resolver': {
       typescript: {
         alwaysTryTypes: true,
-        project: './tsconfig.json',
+        project: './tsconfig.eslint.json',
       },
     },
   },
@@ -41,7 +41,7 @@ module.exports = {
     '@typescript-eslint/no-explicit-any': 'warn',
     '@typescript-eslint/no-floating-promises': 'warn',
     '@typescript-eslint/no-misused-promises': 'warn',
-    '@typescript-eslint/prefer-nullish-coalescing': 'warn',
+    '@typescript-eslint/prefer-nullish-coalescing': 'off',
     '@typescript-eslint/prefer-optional-chain': 'error',
     '@typescript-eslint/no-unnecessary-type-assertion': 'error',
     '@typescript-eslint/no-non-null-assertion': 'warn',
@@ -101,13 +101,24 @@ module.exports = {
   },
   overrides: [
     {
-      files: ['**/*.test.ts', '**/*.spec.ts', '**/test/**/*.ts'],
+      files: ['test/**/*', 'tests/**/*', '**/*.test.ts', '**/*.spec.ts', 'src/**/__tests__/**/*.ts', 'src/**/*.test.ts', 'src/**/*.spec.ts'],
+      parserOptions: {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+        project: ['./tsconfig.eslint.tests.json'],
+      },
       env: {
         jest: true,
       },
       rules: {
+        '@typescript-eslint/no-var-requires': 'off',
         '@typescript-eslint/no-explicit-any': 'off',
+        '@typescript-eslint/explicit-function-return-type': 'off',
         '@typescript-eslint/no-non-null-assertion': 'off',
+        '@typescript-eslint/prefer-nullish-coalescing': 'off',
+        '@typescript-eslint/no-require-imports': 'off',
+        'jest/no-conditional-expect': 'off',
+        'jest/prefer-to-have-length': 'off',
         'max-lines-per-function': 'off',
       },
     },
@@ -125,12 +136,6 @@ module.exports = {
     'coverage/',
     '*.js',
     '!.eslintrc.js',
-    '!jest.config.js',
-    // Ignore all test files under src to avoid parserOptions.project issues
-    'src/**/__tests__/**',
-    'src/**/*.test.ts',
-    'src/**/*.test.tsx',
-    'src/**/*.spec.ts',
-    'src/**/*.spec.tsx',
+    '!jest.config.js'
   ],
 };

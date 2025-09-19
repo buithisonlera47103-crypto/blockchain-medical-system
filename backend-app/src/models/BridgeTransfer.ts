@@ -6,7 +6,7 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import { v4 as uuidv4 } from 'uuid';
 
 import { pool } from '../config/database-mysql';
-import { BridgeTransferModel as IBridgeTransferModel, BridgeTransfer as IBridgeTransfer } from '../services/BridgeOptimizationService';
+
 
 /**
  * 跨链转移记录接口
@@ -112,7 +112,7 @@ interface CountRow extends RowDataPacket {
 /**
  * 跨链桥接转移数据库模型类
  */
-export class BridgeTransferModel implements IBridgeTransferModel {
+export class BridgeTransferModel {
   private readonly db: typeof pool;
 
   constructor() {
@@ -299,7 +299,7 @@ export class BridgeTransferModel implements IBridgeTransferModel {
         return null;
       }
 
-      const row = rows[0] as TransferRow;
+      const row = rows[0];
       return {
         transferId: row.transfer_id,
         recordId: row.record_id,
@@ -488,7 +488,7 @@ export class BridgeTransferModel implements IBridgeTransferModel {
       }
 
       const [rows] = await connection.query<StatsRow[]>(query, params);
-      const stats = (rows[0] as StatsRow | undefined);
+      const stats = (rows[0]);
 
       return {
         total: stats?.total ?? 0,
@@ -520,7 +520,7 @@ export class BridgeTransferModel implements IBridgeTransferModel {
   }
 
   /**
-   * 实现IBridgeTransferModel接口的create方法
+   * 创建桥接转移记录
    */
   async create(data: {
     txId: string;
@@ -532,7 +532,7 @@ export class BridgeTransferModel implements IBridgeTransferModel {
     estimatedGasCost: number;
     estimatedTime: number;
     status: string;
-  }): Promise<IBridgeTransfer> {
+  }): Promise<BridgeTransfer> {
     // 创建转移记录
     const transferId = await this.createTransfer({
       recordId: data.recordIds[0] ?? data.txId,
@@ -548,36 +548,48 @@ export class BridgeTransferModel implements IBridgeTransferModel {
     });
 
     return {
-      id: transferId,
+      transferId,
+      recordId: '',
+      sourceChain: 'fabric',
+      destinationChain: data.targetChain,
+      recipient: data.userId,
+      txHash: '',
+      status: data.status as TransferStatus,
+      timestamp: new Date(),
+      updatedAt: new Date(),
       userId: data.userId,
-      status: data.status,
-      signatures: data.signatures,
+      signatures: { signatures: data.signatures },
       estimatedTime: data.estimatedTime,
-      createdAt: new Date(),
     };
   }
 
   /**
-   * 实现IBridgeTransferModel接口的findById方法
+   * 根据ID查找桥接转移记录
    */
-  async findById(id: string): Promise<IBridgeTransfer | null> {
+  async findById(id: string): Promise<BridgeTransfer | null> {
     const transfer = await this.getTransferById(id);
     if (!transfer) return null;
 
     return {
-      id: transfer.transferId,
-      userId: transfer.userId,
+      transferId: transfer.transferId,
+      recordId: transfer.recordId || '',
+      sourceChain: transfer.sourceChain || '',
+      destinationChain: transfer.destinationChain || '',
+      recipient: transfer.recipient || '',
+      txHash: transfer.txHash || '',
       status: transfer.status,
-      signatures: transfer.signatures ? Object.values(transfer.signatures) as string[] : undefined,
+      timestamp: transfer.timestamp,
+      updatedAt: transfer.updatedAt || transfer.timestamp,
+      userId: transfer.userId,
+      signatures: transfer.signatures || {},
       estimatedTime: transfer.estimatedTime,
-      createdAt: transfer.timestamp,
     };
   }
 
   /**
-   * 实现IBridgeTransferModel接口的findByTxId方法
+   * 根据交易ID查找桥接转移记录
    */
-  async findByTxId(txId: string): Promise<IBridgeTransfer | null> {
+  async findByTxId(txId: string): Promise<BridgeTransfer | null> {
     const connection = await this.db.getConnection();
     try {
       const [rows] = await connection.query<TransferRow[]>(
@@ -591,12 +603,18 @@ export class BridgeTransferModel implements IBridgeTransferModel {
       if (!row) return null;
       
       return {
-        id: row.transfer_id,
-        userId: row.user_id,
+        transferId: row.transfer_id,
+        recordId: row.record_id || '',
+        sourceChain: row.source_chain || '',
+        destinationChain: row.destination_chain || '',
+        recipient: row.recipient || '',
+        txHash: row.tx_hash,
         status: row.status,
-        signatures: row.signatures ? Object.values(JSON.parse(row.signatures)) : undefined,
+        timestamp: new Date(row.timestamp),
+        updatedAt: new Date(row.updated_at || row.timestamp),
+        userId: row.user_id,
+        signatures: row.signatures ? JSON.parse(row.signatures) : {},
         estimatedTime: row.estimated_time,
-        createdAt: new Date(row.timestamp),
       };
     } finally {
       connection.release();
@@ -604,22 +622,28 @@ export class BridgeTransferModel implements IBridgeTransferModel {
   }
 
   /**
-   * 实现IBridgeTransferModel接口的findByUserId方法
+   * 根据用户ID查找桥接转移记录
    */
-  async findByUserId(userId: string): Promise<IBridgeTransfer[]> {
+  async findByUserId(userId: string): Promise<BridgeTransfer[]> {
     const transfers = await this.getTransferHistory(userId);
     return transfers.map((transfer: TransferHistory) => ({
-      id: transfer.transferId,
-      userId,
+      transferId: transfer.transferId,
+      recordId: transfer.recordId || '',
+      sourceChain: transfer.sourceChain || '',
+      destinationChain: transfer.destinationChain || '',
+      recipient: transfer.recipient || '',
+      txHash: transfer.txHash || '',
       status: transfer.status,
-      signatures: transfer.signatures ? Object.values(transfer.signatures) as string[] : undefined,
+      timestamp: transfer.timestamp,
+      updatedAt: transfer.timestamp,
+      userId,
+      signatures: transfer.signatures || {},
       estimatedTime: transfer.estimatedTime,
-      createdAt: transfer.timestamp,
     }));
   }
 
   /**
-   * 实现IBridgeTransferModel接口的createRollback方法
+   * 创建回滚记录
    */
   async createRollback(txId: string, rollbackTxId: string, reason: string): Promise<void> {
     const connection = await this.db.getConnection();

@@ -1,6 +1,6 @@
-import { Router, Response } from 'express';
+import { Router, Response, Request } from 'express';
 import { verify as jwtVerify, type JwtPayload } from 'jsonwebtoken';
-import multer = require('multer');
+import multer, { type FileFilterCallback } from 'multer';
 import type { RowDataPacket } from 'mysql2/promise';
 
 import { pool } from '../config/database-mysql';
@@ -119,13 +119,13 @@ router.get(
         updatedAt: row.updated_at
       }));
 
-      res.json({
+      return res.json({
         records,
         total: records.length
       });
     } catch (error) {
       logger.error('Error fetching medical records:', error);
-      res.status(500).json({ error: 'Failed to fetch medical records' });
+      return res.status(500).json({ error: 'Failed to fetch medical records' });
     }
   })
 );
@@ -136,7 +136,7 @@ const upload = multer({
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB limit
   },
-  fileFilter: (_req: any, file: any, cb: any) => {
+  fileFilter: (_req: Request, file: Express.Multer.File, cb: FileFilterCallback): void => {
     const allowedTypes = [
       'application/pdf',
       'application/dicom',

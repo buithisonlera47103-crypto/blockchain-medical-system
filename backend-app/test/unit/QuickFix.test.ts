@@ -91,12 +91,12 @@ describe('Quick Fix Tests', () => {
     });
 
     it('应该能验证错误类型', () => {
-      try {
+      const throwTypeError = () => {
         throw new TypeError('Type error');
-      } catch (error) {
-        expect(error).toBeInstanceOf(TypeError);
-        expect((error as Error).message).toBe('Type error');
-      }
+      };
+
+      expect(throwTypeError).toThrow(TypeError);
+      expect(throwTypeError).toThrow('Type error');
     });
   });
 

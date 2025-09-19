@@ -4,10 +4,11 @@
  */
 
 import { EventEmitter } from 'events';
-import { Pool } from 'mysql2/promise';
-import Redis from 'ioredis';
 
-import logger from './enhancedLogger';
+import Redis from 'ioredis';
+import { Pool } from 'mysql2/promise';
+
+import { logger } from './logger';
 
 export interface CleanupResource {
   name: string;
@@ -292,23 +293,29 @@ export class ResourceCleanupManager extends EventEmitter {
     const signals = ['SIGTERM', 'SIGINT', 'SIGUSR2'];
     
     signals.forEach(signal => {
-      process.on(signal, async () => {
-        logger.info(`Received ${signal}, starting graceful shutdown`);
-        await this.cleanupAll();
-        process.exit(0);
+      process.on(signal, () => {
+        void (async (): Promise<void> => {
+          logger.info(`Received ${signal}, starting graceful shutdown`);
+          await this.cleanupAll();
+          process.exit(0);
+        })();
       });
     });
 
-    process.on('uncaughtException', async (error) => {
-      logger.error('Uncaught exception, cleaning up resources', { error });
-      await this.cleanupAll(5000); // Shorter timeout for emergency cleanup
-      process.exit(1);
+    process.on('uncaughtException', (error) => {
+      void (async (): Promise<void> => {
+        logger.error('Uncaught exception, cleaning up resources', { error });
+        await this.cleanupAll(5000); // Shorter timeout for emergency cleanup
+        process.exit(1);
+      })();
     });
 
-    process.on('unhandledRejection', async (reason) => {
-      logger.error('Unhandled rejection, cleaning up resources', { reason });
-      await this.cleanupAll(5000);
-      process.exit(1);
+    process.on('unhandledRejection', (reason) => {
+      void (async (): Promise<void> => {
+        logger.error('Unhandled rejection, cleaning up resources', { reason });
+        await this.cleanupAll(5000);
+        process.exit(1);
+      })();
     });
   }
 
@@ -316,12 +323,15 @@ export class ResourceCleanupManager extends EventEmitter {
    * 启动内存监控
    */
   private startMemoryMonitoring(): void {
+    const light = (process.env['LIGHT_MODE'] ?? 'false').toLowerCase() === 'true';
+    const intervalMs = light ? 120000 : 30000; // slow down in light mode
     this.memoryMonitorInterval = setInterval(() => {
       const usage = process.memoryUsage();
       const heapUsedMB = usage.heapUsed / 1024 / 1024;
       
       // 如果内存使用超过阈值，触发垃圾回收
-      if (heapUsedMB > 500) { // 500MB threshold
+      const thresholdMb = parseInt(process.env.MEMORY_GC_THRESHOLD_MB ?? '500');
+      if (heapUsedMB > thresholdMb) {
         logger.warn('High memory usage detected', { 
           heapUsedMB: heapUsedMB.toFixed(2),
           rssMB: (usage.rss / 1024 / 1024).toFixed(2)
@@ -331,7 +341,7 @@ export class ResourceCleanupManager extends EventEmitter {
           global.gc();
         }
       }
-    }, 30000); // Check every 30 seconds
+    }, intervalMs);
   }
 
   /**

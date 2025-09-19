@@ -68,7 +68,7 @@ class RedisRateLimitStore {
  * 生成速率限制键
  */
 function generateRateLimitKey(req: Request, suffix: string = ''): string {
-  const ip = req.ip ?? (req.socket?.remoteAddress as string) ?? 'unknown';
+  const ip = req.ip ?? (req.socket?.remoteAddress) ?? 'unknown';
   const userAgent = req.get('User-Agent') ?? 'unknown';
 
   // 使用IP和User-Agent的组合作为键

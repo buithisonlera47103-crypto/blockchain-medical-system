@@ -9,7 +9,7 @@ import * as path from 'path';
 
 import { config as dotenvConfig } from 'dotenv';
 
-import { enhancedLogger } from '../utils/enhancedLogger';
+import { logger } from '../utils/logger';
 
 // 加载环境变量
 dotenvConfig();
@@ -106,14 +106,14 @@ interface DeploymentResult {
  * Fabric网络部署服务
  */
 export class FabricNetworkSetup {
-  private readonly logger: typeof enhancedLogger;
+  private readonly logger: typeof logger;
   private readonly kubernetesEnabled: boolean;
   private readonly deploymentId: string;
   private readonly startTime: number;
 
   constructor() {
     // 初始化日志
-    this.logger = enhancedLogger;
+    this.logger = logger;
 
     // 检查Kubernetes是否可用
     this.kubernetesEnabled = !!process.env['KUBERNETES_NAMESPACE'];

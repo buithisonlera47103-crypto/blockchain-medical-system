@@ -6,12 +6,12 @@ import express, { Response, NextFunction } from 'express';
 import { body, param, query } from 'express-validator';
 
 import { asyncHandler } from '../middleware/asyncHandler';
-import { enhancedAuthenticateToken } from '../middleware/enhancedAuth';
+import { authenticateToken } from '../middleware/auth';
 import { validateInput } from '../middleware/validation';
 import { AccessControlPolicyEngine, AccessRequest } from '../services/AccessControlPolicyEngine';
 import { EnhancedAuthRequest } from '../types/express-extensions';
 import ApiResponseBuilder from '../utils/ApiResponseBuilder';
-import { SecurityError } from '../utils/EnhancedAppError';
+import { AppError } from '../utils/AppError';
 import { logger } from '../utils/logger';
 
 const router = express.Router();
@@ -99,7 +99,7 @@ const policyEngine = new AccessControlPolicyEngine();
  */
 router.post(
   '/evaluate',
-  enhancedAuthenticateToken,
+  authenticateToken,
   [
     body('subject.entityType')
       .isIn(['user', 'role', 'group', 'department'])
@@ -202,7 +202,7 @@ router.post(
  */
 router.get(
   '/policies',
-  enhancedAuthenticateToken,
+  authenticateToken,
   [
     query('active').optional().isBoolean().withMessage('active参数必须是布尔值'),
     query('effect').optional().isIn(['allow', 'deny']).withMessage('effect参数必须是allow或deny'),
@@ -213,7 +213,7 @@ router.get(
     try {
       // 检查管理员权限
       if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
-        throw new SecurityError('只有管理员可以查看策略规则');
+        throw new AppError('只有管理员可以查看策略规则', 403);
       }
 
       const { active, effect } = req.query;
@@ -311,7 +311,7 @@ router.get(
  */
 router.post(
   '/policies',
-  enhancedAuthenticateToken,
+  authenticateToken,
   [
     body('name')
       .notEmpty()
@@ -330,7 +330,7 @@ router.post(
     try {
       // 检查管理员权限
       if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
-        throw new SecurityError('只有管理员可以添加策略规则');
+        throw new AppError('只有管理员可以添加策略规则', 403);
       }
 
       const {
@@ -408,7 +408,7 @@ router.post(
  */
 router.delete(
   '/policies/:policyId',
-  enhancedAuthenticateToken,
+  authenticateToken,
   [param('policyId').notEmpty().withMessage('策略ID不能为空')],
   validateInput,
   asyncHandler(
@@ -416,7 +416,7 @@ router.delete(
     try {
       // 检查管理员权限
       if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
-        throw new SecurityError('只有管理员可以删除策略规则');
+        throw new AppError('只有管理员可以删除策略规则', 403);
       }
 
       const { policyId } = req.params;

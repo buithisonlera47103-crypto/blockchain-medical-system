@@ -6,8 +6,8 @@
 import { Pool, PoolConnection } from 'mysql2/promise';
 import { v4 as uuidv4 } from 'uuid';
 
-import { BusinessLogicError, ValidationError } from '../utils/EnhancedAppError';
-import { enhancedLogger } from '../utils/enhancedLogger';
+import { AppError } from '../utils/AppError';
+import { logger } from '../utils/logger';
 
 import CacheService, { cacheService as globalCacheService } from './CacheService';
 
@@ -32,7 +32,7 @@ export interface ServiceMetrics {
  */
 export abstract class BaseService {
   protected db: Pool;
-  protected logger: typeof enhancedLogger;
+  protected logger: typeof logger;
   protected cache: CacheService;
   protected config: ServiceConfig;
   protected metrics: ServiceMetrics;
@@ -50,7 +50,7 @@ export abstract class BaseService {
     };
 
     // Initialize logger (enhanced unified logger)
-    this.logger = enhancedLogger;
+    this.logger = logger;
 
     // Initialize cache (DI-enabled). Default to global L1 cache service.
     this.cache = cache ?? globalCacheService;
@@ -194,24 +194,24 @@ export abstract class BaseService {
     });
 
     // Return appropriate error type
-    if (error instanceof ValidationError || error instanceof BusinessLogicError) {
+    if (error instanceof AppError) {
       return error;
     }
 
     // Check for database-specific errors
     if (errorMessage.includes('ER_DUP_ENTRY')) {
-      return new ValidationError(`Duplicate entry in ${context}`, { code: 'DUPLICATE_ENTRY' });
+      return new AppError(`Duplicate entry in ${context}`, 409);
     }
 
     if (errorMessage.includes('ER_NO_REFERENCED_ROW')) {
-      return new ValidationError(
+      return new AppError(
         `Referenced record not found in ${context}`,
-        { code: 'REFERENCE_NOT_FOUND' }
+        404
       );
     }
 
     // Default to business logic error
-    return new BusinessLogicError(`${context} failed: ${errorMessage}`);
+    return new AppError(`${context} failed: ${errorMessage}`, 500);
   }
 
   /**
@@ -230,9 +230,9 @@ export abstract class BaseService {
     );
 
     if (missing.length > 0) {
-      throw new ValidationError(
+      throw new AppError(
         `Missing required fields: ${missing.join(', ')}`,
-        { code: 'MISSING_REQUIRED_FIELDS', missingFields: missing }
+        400
       );
     }
   }

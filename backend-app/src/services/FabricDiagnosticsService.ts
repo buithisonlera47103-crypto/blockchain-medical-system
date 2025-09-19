@@ -3,7 +3,7 @@
  * 提供Fabric网络连接状态检查和诊断功能的服务类
  */
 
-import { enhancedLogger } from '../utils/enhancedLogger';
+import { logger } from '../utils/logger';
 import { getRedisClient } from '../utils/redisClient';
 
 import { CacheManager } from './cache/CacheManager';
@@ -217,7 +217,7 @@ class FabricConnectionDiagnostics {
 export class FabricDiagnosticsService {
   private static instance: FabricDiagnosticsService;
   private readonly cache: CacheManager;
-  private readonly logger: typeof enhancedLogger;
+  private readonly logger: typeof logger;
   private readonly diagnostics: FabricConnectionDiagnostics;
   private isRunning: boolean = false;
   private lastReport: DiagnosticReport | null = null;
@@ -235,8 +235,8 @@ export class FabricDiagnosticsService {
     cacheMisses: 0,
   };
 
-  constructor(logger?: typeof enhancedLogger) {
-    this.logger = logger ?? enhancedLogger;
+  constructor(loggerInstance?: typeof logger) {
+    this.logger = loggerInstance ?? logger;
 
     this.cache = new CacheManager(getRedisClient()); // Redis-backed cache
     this.diagnostics = new FabricConnectionDiagnostics();
@@ -245,7 +245,7 @@ export class FabricDiagnosticsService {
   /**
    * 获取单例实例
    */
-  public static getInstance(logger?: typeof enhancedLogger): FabricDiagnosticsService {
+  public static getInstance(_loggerInstance?: typeof logger): FabricDiagnosticsService {
     if (!FabricDiagnosticsService.instance) {
       FabricDiagnosticsService.instance = new FabricDiagnosticsService(logger);
     }
@@ -467,7 +467,7 @@ export class FabricDiagnosticsService {
    * 静态方法：运行诊断（用于命令行）
    */
   static async runDiagnostics(): Promise<void> {
-    const logger = enhancedLogger;
+    const _loggerInstance = logger;
 
     const service = FabricDiagnosticsService.getInstance(logger);
 

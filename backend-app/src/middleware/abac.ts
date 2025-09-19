@@ -54,7 +54,7 @@ function ipAllowed(ip: string | undefined, cidrs: string[]): boolean {
   });
 }
 
-export function abacEnforce(options: AbacOptions = {}) {
+export function abacEnforce(options: AbacOptions = {}): (req: Request, res: Response, next: NextFunction) => void {
   const enabled = (process.env.ABAC_ENABLED ?? 'true').toLowerCase() === 'true';
   const timeSpec = process.env.ABAC_TIME_WINDOW; // e.g., 09:00-17:00
   const tz = (process.env.ABAC_TZ ?? 'utc') as 'local'|'utc';

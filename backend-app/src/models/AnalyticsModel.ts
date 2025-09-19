@@ -148,7 +148,7 @@ export class AnalyticsModelDAO {
       return null;
     }
 
-    const first = rows[0] as RowDataPacket;
+    const first = rows[0];
     return this.mapRowToModel(first);
   }
 
@@ -235,7 +235,7 @@ export class AnalyticsModelDAO {
     `;
 
     const [rows] = (await this.pool.query(query)) as [RowDataPacket[], unknown];
-    const stats = rows[0] as RowDataPacket | undefined;
+    const stats = rows[0];
 
     return {
       totalModels: stats?.total_models ?? 0,

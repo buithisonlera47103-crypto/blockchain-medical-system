@@ -17,7 +17,6 @@ import helmet from 'helmet';
 import type { Pool as MySQLPool } from 'mysql2/promise';
 import swaggerUi from 'swagger-ui-express';
 import { WebSocketServer } from 'ws';
-import net from 'net';
 
 import { initializeDatabase, testConnection } from './config/database-mysql';
 import { swaggerSpec, swaggerUiOptions } from './config/swagger';
@@ -36,10 +35,9 @@ import {
   errorHandler,
   notFoundHandler,
   setupGlobalErrorHandlers,
-} from './middleware/errorHandling';
-import { apiRateLimit } from './middleware/rateLimiting';
+} from './middleware/errorHandler';
 import { performanceMonitor } from './middleware/performanceMonitor';
-import { BridgeTransferModel } from './models/BridgeTransfer';
+import { apiRateLimit } from './middleware/rateLimiting';
 import { initTracing } from './observability/tracing';
 import accessControlRoutes from './routes/accessControl';
 import analyticsRoutes from './routes/analytics';
@@ -49,7 +47,9 @@ import bridgeRoutes from './routes/bridge';
 import chatRoutes from './routes/chat';
 import encryptedSearchRoutes from './routes/encryptedSearch';
 import enhancedFhirRoutes from './routes/enhancedFhir';
+import externalRoutes from './routes/external';
 import fabricRoutes from './routes/fabric';
+import federatedRoutes from './routes/federated';
 import fhirRoutes from './routes/fhir';
 import hipaaComplianceRoutes from './routes/hipaaCompliance';
 import ipfsRoutes from './routes/ipfs';
@@ -70,10 +70,8 @@ import usersRoutes from './routes/users';
 import { TestSecurityConfig } from './security/testSecurityConfig';
 import { AuditService } from './services/AuditService';
 import { BlockchainService } from './services/BlockchainService';
-import { BridgeOptimizationService } from './services/BridgeOptimizationService';
 import { BridgeService } from './services/BridgeService';
 import { cacheService } from './services/CacheService';
-import CacheWarmingService from './services/CacheWarmingService';
 import { CryptographyService } from './services/CryptographyService';
 import { FabricDiagnosticsService } from './services/FabricDiagnosticsService';
 import { FabricServiceAdapter } from './services/FabricServiceAdapter';
@@ -84,6 +82,7 @@ import MetricsService from './services/MetricsService';
 import { MigrationService } from './services/MigrationService';
 import { SocketService } from './services/SocketService';
 import { TLSConfigService } from './services/TLSConfigService';
+import { ExternalIntegrationService } from './services/ExternalIntegrationService';
 import { resourceCleanupManager } from './utils/ResourceCleanupManager';
 // 加载环境变量
 dotenvConfig();
@@ -143,6 +142,118 @@ app.get('/perf/ping', (_req, res) => {
 app.get('/bench/ping', (_req, res) => {
   res.status(200).type('text/plain').send('pong');
 });
+
+// Fast-only Fabric mirror endpoints declared early to bypass heavy middlewares
+const fastBackground = (fn: () => Promise<unknown>): void => { setImmediate(() => { void fn().catch(() => undefined); }); };
+
+app.get('/fabricz/ping', (_req, res) => {
+  res.status(200).json({ ok: true, ts: new Date().toISOString() });
+});
+
+app.get('/fabricz/status', (_req, res) => {
+  try {
+    const diag = FabricDiagnosticsService.getInstance(logger);
+    const bc = BlockchainService.getInstance(logger);
+
+    const last = diag.getLastReport();
+    const immediate = last ? {
+      status: last.summary.overall_status,
+      message: '返回上次诊断结果（快速路径）',
+      details: '快速返回：读取缓存结果',
+      timestamp: new Date().toISOString(),
+      last_check: last.timestamp,
+      summary: last.summary,
+      critical_issues: [],
+      recommendations: last.recommendations,
+    } : {
+      status: 'warning', message: '快速返回（冷启动）', details: '暂无线上次诊断结果', timestamp: new Date().toISOString(), last_check: 'N/A',
+      summary: { total_checks: 0, passed: 0, warnings: 0, errors: 0 }, critical_issues: [], recommendations: []
+    };
+
+    // Fire-and-forget refresh without blocking response
+    fastBackground(async () => { await diag.getFabricStatus(true); });
+
+    res.status(200).json({ status: 'ok', fabricStatus: immediate, connection: bc.getConnectionStatus(), timestamp: new Date().toISOString() });
+  } catch (e) {
+    res.status(200).json({ status: 'error', message: (e as Error)?.message ?? String(e) });
+  }
+});
+
+app.get('/fabricz/contract-info', (_req, res) => {
+  try {
+    const bc = BlockchainService.getInstance(logger);
+    const conn = bc.getConnectionStatus();
+
+    // Immediate minimal info; background fetch of real contract info
+    fastBackground(async () => { await bc.getContractInfo(); });
+
+    res.status(200).json({
+      success: true,
+      fast: true,
+      connection: conn,
+      contract: { channelName: conn.config.channelName, chaincodeName: conn.config.chaincodeName },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (e) {
+    res.status(200).json({ success: false, fast: true, error: (e as Error)?.message ?? String(e), timestamp: new Date().toISOString() });
+  }
+});
+
+  // Fast chaincode query endpoint (no heavy middlewares): GetAllAssets
+  app.get('/fabricz/assets', async (_req, res) => {
+    try {
+      const bc = BlockchainService.getInstance(logger);
+      const conn = bc.getConnectionStatus();
+      // Execute a real evaluate of GetAllAssets with a short timeout using Promise.race
+      const withTimeout = async <T>(p: Promise<T>, ms: number, fallback: T): Promise<T> => {
+        let t: NodeJS.Timeout | undefined;
+        try {
+          return await Promise.race([
+            p,
+            new Promise<T>(resolve => { t = setTimeout(() => resolve(fallback), ms); }),
+          ]);
+        } finally { if (t) clearTimeout(t); }
+      };
+      const r = await withTimeout(
+        (bc.evaluateTransaction('GetAllAssets') as unknown as Promise<any>),
+        4000,
+        { success: false, error: 'TIMEOUT' } as any
+      );
+      if ((r as any).success) {
+        try {
+          const data = JSON.parse((r as any).data ?? '[]');
+          res.status(200).json({ success: true, chaincode: conn.config.chaincodeName, channel: conn.config.channelName, data, timestamp: new Date().toISOString() });
+        } catch {
+          res.status(200).json({ success: true, chaincode: conn.config.chaincodeName, channel: conn.config.channelName, raw: (r as any).data, timestamp: new Date().toISOString() });
+        }
+      } else {
+        res.status(200).json({ success: false, error: (r as any).error ?? 'UNKNOWN', timestamp: new Date().toISOString() });
+      }
+    } catch (e) {
+      res.status(200).json({ success: false, error: (e as Error)?.message ?? String(e), timestamp: new Date().toISOString() });
+    }
+  });
+
+
+app.get('/fabricz/test', (_req, res) => {
+  try {
+    const bc = BlockchainService.getInstance(logger);
+    const conn = bc.getConnectionStatus();
+
+    // Schedule background connectivity + light query without blocking
+    fastBackground(async () => {
+      const c = await bc.ensureConnection();
+      if ((c as any).success) {
+        await bc.getContractInfo().catch(() => undefined);
+      }
+    });
+
+    res.status(200).json({ status: 'queued', results: { connection: conn.isConnected, chaincode: false, error: null }, timestamp: new Date().toISOString() });
+  } catch (e) {
+    res.status(200).json({ status: 'error', message: (e as Error)?.message ?? String(e) });
+  }
+});
+
 
 
 /**
@@ -212,6 +323,13 @@ app.use(recordApiMetrics);
 const metricsService = MetricsService.getInstance();
 app.use(metricsService.requestMetricsMiddleware());
 
+// Apply runtime throttling defaults when LIGHT_MODE is enabled
+if ((process.env['LIGHT_MODE'] ?? 'false').toLowerCase() === 'true') {
+  logger.info('LIGHT_MODE enabled: applying runtime throttling defaults');
+  const current = parseInt(process.env['METRICS_INTERVAL_MS'] ?? '120000');
+  process.env['METRICS_INTERVAL_MS'] = String(Math.max(current, 300000));
+}
+
 /**
  * API路由配置
  */
@@ -231,18 +349,20 @@ app.get('/health/detailed', (_req, res) => {
 });
 
 // 完整的服务健康检查
-app.get('/health/services', async (_req, res) => {
-  try {
-    const { performHealthCheck } = await import('./middleware/healthCheck');
-    const healthResult = await performHealthCheck();
-    res.json(healthResult);
-  } catch (error) {
-    res.status(503).json({
-      status: 'error',
-      message: 'Health check failed',
-      error: error instanceof Error ? error.message : String(error)
-    });
-  }
+app.get('/health/services', (_req, res): void => {
+  void (async (): Promise<void> => {
+    try {
+      const { performHealthCheck } = await import('./middleware/healthCheck');
+      const healthResult = await performHealthCheck();
+      res.json(healthResult);
+    } catch (error) {
+      res.status(503).json({
+        status: 'error',
+        message: 'Health check failed',
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  })();
 });
 
 // 业务指标端点
@@ -318,11 +438,109 @@ app.use('/api/v1/analytics', analyticsRoutes);
 // 桥接路由
 app.use('/api/v1/bridge', bridgeRoutes);
 
+// 外部集成路由（OAuth2 SSO、生物识别等）
+app.use('/api/v1/external', externalRoutes);
+
+// 联邦学习路由
+app.use('/api/v1/federated', federatedRoutes);
+
 // 性能路由
 app.use('/api/v1/performance', performanceRoutes);
 
 // 监控路由
 app.use('/api/v1/monitoring', monitoringRoutes);
+
+  // Fast non-API mirror endpoints to guarantee no timeouts
+  const withTimeout = async <T>(p: Promise<T>, ms: number, onTimeout: () => T | Promise<T>): Promise<T> => {
+    let t: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        p,
+        new Promise<T>(resolve => {
+          t = setTimeout(() => { void Promise.resolve(onTimeout()).then(resolve); }, ms);
+        }),
+      ]);
+    } finally { if (t) clearTimeout(t); }
+  };
+
+  // Lightweight ping under /fabricz to verify route reachability without touching Fabric
+  app.get('/fabricz/ping', (_req, res) => {
+    res.status(200).json({ ok: true, ts: new Date().toISOString() });
+  });
+
+  app.get('/fabricz/status', async (_req, res) => {
+    try {
+      const diag = FabricDiagnosticsService.getInstance(logger);
+      const bc = BlockchainService.getInstance(logger);
+
+      const fabricStatus = await withTimeout(
+        diag.getFabricStatus(false),
+        4000,
+        () => {
+          const last = diag.getLastReport();
+          if (last) {
+            return {
+              status: last.summary.overall_status,
+              message: '返回上次诊断结果（超时快速返回）',
+              details: '快速路径：诊断超时超过阈值',
+              timestamp: new Date().toISOString(),
+              last_check: last.timestamp,
+              summary: last.summary,
+              critical_issues: [],
+              recommendations: last.recommendations,
+            } as any;
+          }
+          return {
+            status: 'warning', message: '快速返回', details: '诊断超时', timestamp: new Date().toISOString(), last_check: 'N/A',
+            summary: { total_checks: 0, passed: 0, warnings: 0, errors: 0 }, critical_issues: [], recommendations: []
+          } as any;
+        }
+      );
+
+      res.status(200).json({
+        status: 'ok',
+        fabricStatus,
+        connection: bc.getConnectionStatus(),
+        timestamp: new Date().toISOString(),
+      });
+    } catch (e) {
+      res.status(200).json({ status: 'error', message: (e as Error)?.message ?? String(e) });
+    }
+  });
+
+  app.get('/fabricz/contract-info', async (_req, res) => {
+    const bc = BlockchainService.getInstance(logger);
+    const info = await withTimeout(
+      bc.getContractInfo(),
+      4000,
+      () => ({ success: false, error: 'TIMEOUT', message: 'contract-info timeout fast-return', timestamp: new Date().toISOString() }) as any
+    );
+    res.status(200).json(info);
+  });
+
+  app.get('/fabricz/test', async (_req, res) => {
+    try {
+      const bc = BlockchainService.getInstance(logger);
+      const conn = await withTimeout(bc.ensureConnection(), 4000, () => ({ success: false, error: 'TIMEOUT: ensureConnection' } as any));
+      const result: { connection: boolean; chaincode: boolean; error: string | null } = {
+        connection: !!(conn as any).success,
+        chaincode: false,
+        error: (conn as any).success ? null : ((conn as any).error ?? 'connection timeout')
+      };
+      if ((conn as any).success) {
+        const q = await withTimeout(bc.getContractInfo(), 4000, () => ({ success: false, error: 'TIMEOUT: getContractInfo' } as any));
+        result.chaincode = !!(q as any).success;
+        if (!(q as any).success) result.error = (q as any).error ?? 'Unknown chaincode error';
+      }
+      res.status(200).json({ status: 'completed', results: result, timestamp: new Date().toISOString() });
+    } catch (e) {
+      res.status(200).json({ status: 'error', message: (e as Error)?.message ?? String(e) });
+    }
+  });
+
+// 添加健康检查路由
+app.get('/api/v1/health', healthCheck);
+app.get('/health', healthCheck);
 
 // 系统状态/健康路由
 app.use('/api/v1/system', systemRoutes);
@@ -381,42 +599,8 @@ async function initializeServices(): Promise<void> {
       blockchainService = undefined;
     }
 
-    // 可选：启动缓存预热服务
-    try {
-      const warming = CacheWarmingService.getInstance();
-      if (blockchainService) {
-        const warmInfo = (process.env.WARM_BLOCKCHAIN_GETCONTRACTINFO ?? 'true').toLowerCase() === 'true';
-        const warmList = (process.env.WARM_BLOCKCHAIN_LISTRECORDS ?? 'false').toLowerCase() === 'true';
-        if (warmInfo) {
-          // 大幅增加区块链预热间隔以减少CPU使用率
-          const interval = Number(process.env.WARM_GETCONTRACTINFO_MS ?? 300000); // 默认5分钟而不是30秒
-          warming.register('blockchain:GetContractInfo', async () => {
-            try {
-              await blockchainService?.evaluateTransaction('GetContractInfo');
-            } catch (e) {
-              logger.debug('Warm GetContractInfo failed (non-fatal)', e);
-            }
-          }, interval);
-        }
-        if (warmList) {
-          const interval = Number(process.env.WARM_LISTRECORDS_MS ?? 600000); // 默认10分钟而不是1分钟
-          warming.register('blockchain:ListRecords', async () => {
-            try {
-              await blockchainService?.evaluateTransaction('ListRecords');
-            } catch (e) {
-              logger.debug('Warm ListRecords failed (non-fatal)', e);
-            }
-          }, interval);
-        }
-      }
-      if ((process.env.WARM_CACHE_ENABLED ?? 'false').toLowerCase() === 'true' && (process.env.LIGHT_MODE ?? 'false').toLowerCase() !== 'true') {
-        warming.start();
-      } else {
-        logger.info('Cache warming disabled (WARM_CACHE_ENABLED!=true or LIGHT_MODE)');
-      }
-    } catch (e) {
-      logger.info('Cache warming service initialization failed', e);
-    }
+    // 缓存预热服务已移除，使用基础缓存即可
+    logger.info('使用基础缓存服务，无需预热');
 
     // 初始化Fabric诊断服务（LIGHT_MODE 下跳过）
     const LIGHT_MODE = (process.env.LIGHT_MODE ?? 'false').toLowerCase() === 'true';
@@ -440,13 +624,8 @@ async function initializeServices(): Promise<void> {
 
     // 初始化桥接服务
     const bridgeService = new BridgeService(pool as unknown as MySQLPool, gateway, medicalRecordService, logger);
-    const fabricServiceAdapter = new FabricServiceAdapter(gateway, logger);
-    const bridgeOptimizationService = BridgeOptimizationService.getInstance(
-      logger,
-      cacheService,
-      new BridgeTransferModel(),
-      fabricServiceAdapter
-    );
+    const _fabricServiceAdapter = new FabricServiceAdapter(gateway, logger);
+    // 桥接优化服务已移除，使用基础桥接服务
 
     // Fabric网络初始化已由相关服务内部处理（如适用）
 
@@ -532,7 +711,44 @@ async function initializeServices(): Promise<void> {
 
     app.locals.blockchainService = blockchainService;
     app.locals.fabricDiagnosticsService = fabricDiagnosticsService;
-    app.locals.bridgeOptimizationService = bridgeOptimizationService;
+
+    // 初始化外部集成服务
+    const externalIntegrationService = new ExternalIntegrationService({
+      enabled: true,
+      oauth2: {
+        enabled: (process.env.OAUTH2_ENABLED ?? 'false').toLowerCase() === 'true',
+        providers: {
+          // 示例配置，实际应从环境变量读取
+          hospital_a: {
+            clientId: process.env.OAUTH2_HOSPITAL_A_CLIENT_ID ?? '',
+            clientSecret: process.env.OAUTH2_HOSPITAL_A_CLIENT_SECRET ?? '',
+            authUrl: process.env.OAUTH2_HOSPITAL_A_AUTH_URL ?? '',
+            tokenUrl: process.env.OAUTH2_HOSPITAL_A_TOKEN_URL ?? '',
+            userInfoUrl: process.env.OAUTH2_HOSPITAL_A_USER_INFO_URL ?? '',
+            scope: ['openid', 'profile', 'email']
+          }
+        }
+      },
+      federatedLearning: {
+        enabled: (process.env.FEDERATED_LEARNING_ENABLED ?? 'false').toLowerCase() === 'true',
+        endpoints: (process.env.FEDERATED_LEARNING_ENDPOINTS ?? '').split(',').filter(Boolean),
+        encryptionKey: process.env.FEDERATED_LEARNING_ENCRYPTION_KEY
+      },
+      biometrics: {
+        enabled: (process.env.BIOMETRICS_ENABLED ?? 'false').toLowerCase() === 'true',
+        providers: (process.env.BIOMETRIC_PROVIDERS ?? 'fingerprint,face').split(','),
+        threshold: parseFloat(process.env.BIOMETRIC_THRESHOLD ?? '0.85')
+      },
+      sso: {
+        enabled: (process.env.SSO_ENABLED ?? 'false').toLowerCase() === 'true',
+        samlEndpoint: process.env.SSO_SAML_ENDPOINT,
+        oidcEndpoint: process.env.SSO_OIDC_ENDPOINT
+      }
+    }, pool);
+
+    await externalIntegrationService.initialize();
+    app.locals.externalIntegrationService = externalIntegrationService;
+
 
 
 
@@ -710,34 +926,12 @@ async function startApplication(): Promise<void> {
     const preferredPort = Number(tlsConfigService.isTLSEnabled() ? HTTPS_PORT : PORT) || 3001;
     const shouldListen = (process.env['NODE_ENV'] ?? 'development') !== 'test' && (process.env['START_SERVER'] ?? 'true') !== 'false';
 
-    // 查找可用端口，避免 EADDRINUSE 未捕获异常
-    const findAvailablePort = async (startPort: number, attempts = 6): Promise<number> => {
-      let port = startPort;
-      for (let i = 0; i < attempts; i++) {
-        // eslint-disable-next-line no-await-in-loop
-        const free = await new Promise<boolean>(resolve => {
-          const tester = net.createServer()
-            .once('error', err => {
-              if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
-                resolve(false);
-              } else {
-                resolve(false);
-              }
-            })
-            .once('listening', () => {
-              tester.close(() => resolve(true));
-            })
-            .listen(port);
-        });
-        if (free) return port;
-        port += 1;
-      }
-      return startPort; // fallback
-    };
-
+    // 固定监听端口（不再动态漂移），优先 PORT 环境变量，否则使用首选端口
     if (shouldListen) {
-      const portToUse = await findAvailablePort(preferredPort, 6);
-      server.listen(portToUse, () => {
+      const envPort = Number(process.env['PORT']);
+      const portToUse = !Number.isNaN(envPort) && envPort > 0 ? envPort : preferredPort;
+
+      server.listen(portToUse, '0.0.0.0', () => {
         logger.info(`EMR区块链系统后端服务启动成功`);
 
         if (tlsConfigService.isTLSEnabled()) {
@@ -861,4 +1055,4 @@ export async function initializeForTesting(): Promise<void> {
 }
 
 export default app;
-export { server, wss };
+export { app, server, wss };

@@ -1,6 +1,7 @@
 
-import { Request, Response, NextFunction } from 'express';
 import { performance } from 'perf_hooks';
+
+import { Request, Response, NextFunction } from 'express';
 
 // 性能监控中间件
 export const performanceMonitor = (req: Request, res: Response, next: NextFunction): void => {
@@ -22,7 +23,7 @@ export const performanceMonitor = (req: Request, res: Response, next: NextFuncti
     }
     
     // 记录到监控系统（如果需要）
-    const globalWithMetrics = global as any;
+    const globalWithMetrics = global as unknown as { metricsCollector?: { recordApiCall: (p: Record<string, unknown>) => void } };
     if (globalWithMetrics.metricsCollector) {
       globalWithMetrics.metricsCollector.recordApiCall({
         method: req.method,
@@ -39,21 +40,21 @@ export const performanceMonitor = (req: Request, res: Response, next: NextFuncti
 
 // 数据库查询性能监控
 export const dbQueryMonitor = {
-  beforeQuery: (sql: string, params?: any[]) => {
+  beforeQuery: (sql: string, params?: unknown[]): { sql: string; params?: unknown[]; startTime: number } => {
     return {
       sql,
       params,
       startTime: performance.now()
     };
   },
-  
-  afterQuery: (queryInfo: any, error?: Error) => {
+
+  afterQuery: (queryInfo: { sql: string; startTime: number }, error?: Error): void => {
     const duration = performance.now() - queryInfo.startTime;
     
     // 记录慢查询（超过500ms）
     if (duration > 500) {
       console.warn('Slow Database Query:', {
-        sql: queryInfo.sql.substring(0, 100) + '...',
+        sql: `${queryInfo.sql.substring(0, 100)  }...`,
         duration: `${duration.toFixed(2)}ms`,
         error: error?.message
       });

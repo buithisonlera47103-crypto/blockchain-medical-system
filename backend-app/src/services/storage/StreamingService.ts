@@ -10,7 +10,7 @@ import { Readable, Transform, pipeline } from 'stream';
 import { promisify } from 'util';
 import * as zlib from 'zlib';
 
-import logger from '../../utils/enhancedLogger';
+import { logger } from '../../utils/logger';
 import { MetricsService } from '../MetricsService';
 
 const pipelineAsync = promisify(pipeline);

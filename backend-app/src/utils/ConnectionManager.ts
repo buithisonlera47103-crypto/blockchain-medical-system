@@ -3,9 +3,10 @@
  */
 
 import { EventEmitter } from 'events';
-import { createLogger } from '../utils/logger';
 
-const logger = createLogger('ConnectionManager');
+import baseLogger from "./logger";
+
+const logger = baseLogger;
 
 interface ConnectionConfig {
   maxRetries: number;
@@ -18,7 +19,7 @@ interface ConnectionConfig {
 interface ManagedConnection {
   id: string;
   type: 'redis' | 'mysql' | 'ipfs' | 'fabric' | 'websocket';
-  connection: any;
+  connection: unknown;
   lastActivity: Date;
   retryCount: number;
   isHealthy: boolean;
@@ -54,7 +55,7 @@ export class ConnectionManager extends EventEmitter {
   registerConnection(
     id: string,
     type: ManagedConnection['type'],
-    connection: any,
+    connection: unknown,
     healthCheckFn?: () => Promise<boolean>
   ): void {
     if (this.isShuttingDown) {
@@ -97,7 +98,7 @@ export class ConnectionManager extends EventEmitter {
   /**
    * 获取连接
    */
-  getConnection(id: string): any {
+  getConnection(id: string): unknown {
     const connection = this.connections.get(id);
     if (!connection) {
       throw new Error(`连接不存在: ${id}`);
@@ -167,7 +168,7 @@ export class ConnectionManager extends EventEmitter {
   /**
    * 重连连接
    */
-  async reconnectConnection(id: string, reconnectFn: () => Promise<any>): Promise<boolean> {
+  async reconnectConnection(id: string, reconnectFn: () => Promise<unknown>): Promise<boolean> {
     const connection = this.connections.get(id);
     if (!connection) {
       return false;
@@ -213,8 +214,8 @@ export class ConnectionManager extends EventEmitter {
       
       // 安排下次重连
       if (connection.retryCount < this.config.maxRetries) {
-        connection.reconnectTimer = setTimeout(() => {
-          this.reconnectConnection(id, reconnectFn);
+        connection.reconnectTimer = setTimeout((): void => {
+          void this.reconnectConnection(id, reconnectFn);
         }, this.config.retryDelay * Math.pow(2, connection.retryCount)); // 指数退避
       }
       
@@ -258,8 +259,9 @@ export class ConnectionManager extends EventEmitter {
     connection: ManagedConnection,
     healthCheckFn?: () => Promise<boolean>
   ): void {
-    connection.heartbeatTimer = setInterval(async () => {
-      try {
+    connection.heartbeatTimer = setInterval(() => {
+      void (async (): Promise<void> => {
+        try {
         if (healthCheckFn) {
           connection.isHealthy = await healthCheckFn();
         } else {
@@ -269,13 +271,14 @@ export class ConnectionManager extends EventEmitter {
         if (!connection.isHealthy) {
           this.emit('connectionUnhealthy', { id: connection.id, type: connection.type });
         }
-      } catch (error) {
+        } catch (error) {
         connection.isHealthy = false;
-        logger.error('心跳检查失败', { 
-          id: connection.id, 
-          error: error instanceof Error ? error.message : String(error) 
+        logger.error('心跳检查失败', {
+          id: connection.id,
+          error: error instanceof Error ? error.message : String(error)
         });
       }
+      })();
     }, this.config.heartbeatInterval);
   }
 
@@ -319,8 +322,8 @@ export class ConnectionManager extends EventEmitter {
    */
   private setupEventHandlers(): void {
     // 进程退出时清理所有连接
-    const cleanup = () => {
-      this.shutdown();
+    const cleanup = (): void => {
+      void this.shutdown();
     };
 
     process.on('SIGINT', cleanup);
@@ -328,14 +331,14 @@ export class ConnectionManager extends EventEmitter {
     process.on('exit', cleanup);
     
     // 处理未捕获的异常
-    process.on('uncaughtException', (error) => {
+    process.on('uncaughtException', (error: Error) => {
       logger.error('未捕获的异常', { error: error.message });
-      this.shutdown();
+      void this.shutdown();
     });
 
-    process.on('unhandledRejection', (reason) => {
+    process.on('unhandledRejection', (reason: unknown) => {
       logger.error('未处理的Promise拒绝', { reason });
-      this.shutdown();
+      void this.shutdown();
     });
   }
 
@@ -352,39 +355,39 @@ export class ConnectionManager extends EventEmitter {
     }
 
     // 安全关闭连接
-    this.safeCloseConnection(connection.connection, connection.type);
+    void this.safeCloseConnection(connection.connection, connection.type);
   }
 
   /**
    * 安全关闭连接
    */
-  private async safeCloseConnection(connection: any, type: string): Promise<void> {
+  private async safeCloseConnection(connection: unknown, type: string): Promise<void> {
     try {
       switch (type) {
         case 'redis':
-          if (connection && typeof connection.quit === 'function') {
-            await connection.quit();
-          } else if (connection && typeof connection.disconnect === 'function') {
-            connection.disconnect();
+          if (connection && typeof (connection as any).quit === 'function') {
+            await (connection as any).quit();
+          } else if (connection && typeof (connection as any).disconnect === 'function') {
+            (connection as any).disconnect();
           }
           break;
         case 'mysql':
-          if (connection && typeof connection.end === 'function') {
-            await connection.end();
-          } else if (connection && typeof connection.destroy === 'function') {
-            connection.destroy();
+          if (connection && typeof (connection as any).end === 'function') {
+            await (connection as any).end();
+          } else if (connection && typeof (connection as any).destroy === 'function') {
+            (connection as any).destroy();
           }
           break;
         case 'websocket':
-          if (connection && typeof connection.close === 'function') {
-            connection.close();
+          if (connection && typeof (connection as any).close === 'function') {
+            (connection as any).close();
           }
           break;
         default:
-          if (connection && typeof connection.close === 'function') {
-            await connection.close();
-          } else if (connection && typeof connection.disconnect === 'function') {
-            await connection.disconnect();
+          if (connection && typeof (connection as any).close === 'function') {
+            await (connection as any).close();
+          } else if (connection && typeof (connection as any).disconnect === 'function') {
+            await (connection as any).disconnect();
           }
       }
     } catch (error) {
@@ -398,16 +401,16 @@ export class ConnectionManager extends EventEmitter {
   /**
    * Redis健康检查
    */
-  private async checkRedisHealth(connection: any): Promise<boolean> {
+  private async checkRedisHealth(connection: unknown): Promise<boolean> {
     try {
       if (!connection) return false;
 
-      if (typeof connection.ping === 'function') {
-        const result = await connection.ping();
+      if (typeof (connection as any).ping === 'function') {
+        const result = await (connection as any).ping();
         return result === 'PONG';
       }
 
-      return connection.status === 'ready';
+      return (connection as any).status === 'ready';
     } catch (error) {
       return false;
     }
@@ -416,17 +419,17 @@ export class ConnectionManager extends EventEmitter {
   /**
    * MySQL健康检查
    */
-  private async checkMySQLHealth(connection: any): Promise<boolean> {
+  private async checkMySQLHealth(connection: unknown): Promise<boolean> {
     try {
       if (!connection) return false;
 
-      if (typeof connection.ping === 'function') {
-        await connection.ping();
+      if (typeof (connection as any).ping === 'function') {
+        await (connection as any).ping();
         return true;
       }
 
-      if (typeof connection.query === 'function') {
-        await connection.query('SELECT 1');
+      if (typeof (connection as any).query === 'function') {
+        await (connection as any).query('SELECT 1');
         return true;
       }
 
@@ -439,12 +442,12 @@ export class ConnectionManager extends EventEmitter {
   /**
    * IPFS健康检查
    */
-  private async checkIPFSHealth(connection: any): Promise<boolean> {
+  private async checkIPFSHealth(connection: unknown): Promise<boolean> {
     try {
       if (!connection) return false;
 
-      if (typeof connection.id === 'function') {
-        await connection.id();
+      if (typeof (connection as any).id === 'function') {
+        await (connection as any).id();
         return true;
       }
 
@@ -457,12 +460,12 @@ export class ConnectionManager extends EventEmitter {
   /**
    * Fabric健康检查
    */
-  private async checkFabricHealth(connection: any): Promise<boolean> {
+  private async checkFabricHealth(connection: unknown): Promise<boolean> {
     try {
       if (!connection) return false;
 
       // Fabric连接通常是Gateway或Network对象
-      if (typeof connection.getNetwork === 'function') {
+      if (typeof (connection as any).getNetwork === 'function') {
         return true;
       }
 
@@ -475,11 +478,11 @@ export class ConnectionManager extends EventEmitter {
   /**
    * WebSocket健康检查
    */
-  private async checkWebSocketHealth(connection: any): Promise<boolean> {
+  private async checkWebSocketHealth(connection: unknown): Promise<boolean> {
     try {
       if (!connection) return false;
 
-      return connection.readyState === 1; // WebSocket.OPEN
+      return (connection as any).readyState === 1; // WebSocket.OPEN
     } catch (error) {
       return false;
     }

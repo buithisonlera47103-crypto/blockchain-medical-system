@@ -1,6 +1,6 @@
-import { RecoveryService } from '../../src/services/RecoveryService';
 import { BackupService } from '../../src/services/BackupService';
 import { MerkleTreeService } from '../../src/services/MerkleTreeService';
+import { RecoveryService } from '../../src/services/RecoveryService';
 
 // Mock all external dependencies
 jest.mock('../../src/config/database', () => ({

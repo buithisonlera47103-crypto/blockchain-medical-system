@@ -1,5 +1,5 @@
-import request from 'supertest';
 import express from 'express';
+import request from 'supertest';
 
 // Bypass JWT for these tests (mock exact specifier resolved from router)
 jest.mock(require.resolve('../../routes/../middleware/auth'), () => ({

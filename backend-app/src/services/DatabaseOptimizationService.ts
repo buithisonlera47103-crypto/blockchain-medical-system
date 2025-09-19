@@ -10,7 +10,7 @@
 
 import { Pool, PoolConnection } from 'mysql2/promise';
 
-import { BusinessLogicError } from '../utils/EnhancedAppError';
+import { AppError } from '../utils/AppError';
 import { logger } from '../utils/logger';
 
 /**
@@ -183,11 +183,13 @@ export class DatabaseOptimizationService {
       },
     ];
 
-    for (const index of indexes) {
+    // 并行创建索引以提高性能
+    const indexPromises = indexes.map(async (index) => {
       try {
         const sql = this.generateCreateIndexSQL(index);
         await this.pool.execute(sql);
         logger.debug('索引创建成功', { indexName: index.name });
+        return { success: true, indexName: index.name };
       } catch (error: unknown) {
         const err = error as { code?: string; message?: string };
         if (err.code === 'ER_DUP_KEYNAME') {
@@ -195,8 +197,11 @@ export class DatabaseOptimizationService {
         } else {
           logger.warn('索引创建失败', { indexName: index.name, error: err.message });
         }
+        return { success: false, indexName: index.name };
       }
-    }
+    });
+
+    await Promise.all(indexPromises);
   }
 
   /**
@@ -308,7 +313,7 @@ export class DatabaseOptimizationService {
         error: err.message,
       });
 
-      throw new BusinessLogicError(`查询执行失败: ${err.message}`);
+      throw new AppError(`查询执行失败: ${err.message}`, 500);
     }
   }
 
@@ -494,7 +499,7 @@ export class DatabaseOptimizationService {
     } catch (error: unknown) {
       const err = error as { message?: string };
       logger.error('数据库维护失败', error);
-      throw new BusinessLogicError(`数据库维护失败: ${err.message}`);
+      throw new AppError(`数据库维护失败: ${err.message}`, 500);
     }
   }
 
@@ -504,15 +509,20 @@ export class DatabaseOptimizationService {
   private async updateTableStatistics(): Promise<void> {
     const tables = ['users', 'permissions', 'audit_logs', 'hipaa_audit_logs'];
 
-    for (const table of tables) {
+    // 并行更新表统计信息以提高性能
+    const tablePromises = tables.map(async (table) => {
       try {
         await this.pool.execute(`ANALYZE TABLE ${table}`);
         logger.debug('表统计信息更新完成', { table });
+        return { success: true, table };
       } catch (error: unknown) {
         const err = error as { message?: string };
         logger.warn('表统计信息更新失败', { table, error: err.message });
+        return { success: false, table };
       }
-    }
+    });
+
+    await Promise.all(tablePromises);
   }
 
   /**

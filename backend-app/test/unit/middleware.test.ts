@@ -1,5 +1,7 @@
-// @ts-nocheck
+
 import { Request, Response, NextFunction } from 'express';
+
+
 import { AppError } from '../../src/utils/AppError';
 
 describe('Middleware Tests', () => {
@@ -23,7 +25,7 @@ describe('Middleware Tests', () => {
   });
 
   describe('Error Handling Middleware', () => {
-    const errorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
+    const errorHandler = (err: any, req: Request, res: Response, _next: NextFunction) => {
       if (err instanceof AppError) {
         return res.status(err.statusCode).json({
           error: err.message,
@@ -67,15 +69,17 @@ describe('Middleware Tests', () => {
       const token = req.headers.authorization?.split(' ')[1];
 
       if (!token) {
-        return res.status(401).json({ error: 'No token provided' });
+        res.status(401).json({ error: 'No token provided' });
+        return;
       }
 
       if (token === 'valid-token') {
         (req as any).user = { id: 'user-1', username: 'testuser' };
-        return next();
+        next();
+        return;
       }
 
-      return res.status(401).json({ error: 'Invalid token' });
+      res.status(401).json({ error: 'Invalid token' });
     };
 
     it('should reject requests without token', () => {
@@ -112,13 +116,14 @@ describe('Middleware Tests', () => {
         const missingFields = requiredFields.filter(field => !req.body[field]);
 
         if (missingFields.length > 0) {
-          return res.status(400).json({
+          res.status(400).json({
             error: 'Missing required fields',
             missingFields,
           });
+          return;
         }
 
-        return next();
+        next();
       };
     };
 
@@ -154,7 +159,8 @@ describe('Middleware Tests', () => {
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
       if (req.method === 'OPTIONS') {
-        return res.status(200).end();
+        res.status(200).end();
+        return;
       }
 
       next();

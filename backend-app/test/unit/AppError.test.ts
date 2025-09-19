@@ -54,12 +54,20 @@ describe('AppError Tests', () => {
   });
 
   it('should preserve error message and code when thrown', () => {
-    try {
+    const throwError = () => {
       throw new AppError('Custom error', 422);
+    };
+
+    expect(throwError).toThrow(AppError);
+    expect(throwError).toThrow('Custom error');
+
+    // Test specific properties
+    let thrownError: any;
+    try {
+      throwError();
     } catch (error) {
-      expect(error).toBeInstanceOf(AppError);
-      expect((error as AppError).message).toBe('Custom error');
-      expect((error as AppError).statusCode).toBe(422);
+      thrownError = error;
     }
+    expect(thrownError.statusCode).toBe(422);
   });
 });

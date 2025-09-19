@@ -8,9 +8,7 @@ import rateLimit from 'express-rate-limit';
 import { body, query, validationResult } from 'express-validator';
 
 import { asyncHandler } from '../middleware/asyncHandler';
-import { AuthenticatedRequest } from '../middleware/auth';
-import { authenticateToken } from '../middleware/authMiddleware';
-import { BridgeOptimizationService } from '../services/BridgeOptimizationService';
+import { AuthenticatedRequest, authenticateToken } from '../middleware/auth';
 import { BridgeService } from '../services/BridgeService';
 import { logger } from '../utils/logger';
 
@@ -247,7 +245,7 @@ router.post(
 
         // 获取优化服务实例
         const bridgeOptimizationService = req.app.locals
-          .bridgeOptimizationService as BridgeOptimizationService;
+          .bridgeOptimizationService;
 
         // 执行批量跨链转移
         const result = await bridgeOptimizationService.optimizeTransfer({
@@ -433,7 +431,7 @@ router.post(
 
       // 获取优化服务实例
       const bridgeOptimizationService = req.app.locals
-        .bridgeOptimizationService as BridgeOptimizationService;
+        .bridgeOptimizationService;
 
       // 执行回滚
       const result = await bridgeOptimizationService.rollbackTransaction({

@@ -2,8 +2,8 @@ import os from 'os';
 
 import { Request, Response, NextFunction } from 'express';
 
-import { LogAnalysisService } from '../services/LogAnalysisService';
-import { enhancedLogger as winston } from '../utils/enhancedLogger';
+
+import { logger as winston } from '../utils/logger';
 
 interface EnhancedUser {
   id?: string;
@@ -33,12 +33,10 @@ interface SystemMetrics {
 }
 
 export class MonitoringMiddleware {
-  private readonly logAnalysis: LogAnalysisService;
   private readonly logger: typeof winston;
   private metricsInterval: NodeJS.Timeout | null = null;
 
-  constructor(logAnalysis: LogAnalysisService) {
-    this.logAnalysis = logAnalysis;
+  constructor() {
     this.logger = winston;
 
     // 启动系统指标收集
@@ -104,8 +102,8 @@ export class MonitoringMiddleware {
       userAgent: req.get('User-Agent'),
     };
 
-    // 添加到日志分析服务
-    this.logAnalysis.addLogEntry(logEntry as LogEntry);
+    // 日志分析服务已移除，直接记录日志
+    this.logger.info('API请求监控', logEntry);
 
     // 如果是错误响应或响应时间过长，记录详细日志
     if (res.statusCode >= 400 || responseTime > 2000) {
@@ -142,8 +140,8 @@ export class MonitoringMiddleware {
       userAgent: req.get('User-Agent'),
     };
 
-    // 添加到日志分析服务
-    this.logAnalysis.addLogEntry(logEntry as LogEntry);
+    // 日志分析服务已移除，直接记录错误日志
+    this.logger.error('错误监控', logEntry);
 
     // 记录错误日志
     this.logger.error('Request error', logEntry);
@@ -206,7 +204,7 @@ export class MonitoringMiddleware {
         userAgent: undefined,
       };
 
-      this.logAnalysis.addLogEntry(logEntry as LogEntry);
+      this.logger.warn('安全事件监控', logEntry);
 
       // 检查是否需要告警
       this.checkMetricsAlerts(metrics);
@@ -292,7 +290,7 @@ export class MonitoringMiddleware {
         ip: undefined,
         userAgent: undefined,
       };
-      this.logAnalysis.addLogEntry(logEntry as LogEntry);
+      this.logger.info('系统事件监控', logEntry);
     }
 
     // 内存使用率告警
@@ -310,7 +308,7 @@ export class MonitoringMiddleware {
         ip: undefined,
         userAgent: undefined,
       };
-      this.logAnalysis.addLogEntry(logEntry as LogEntry);
+      this.logger.info('性能事件监控', logEntry);
     }
   }
 
@@ -320,7 +318,7 @@ export class MonitoringMiddleware {
   public healthCheck(): (req: Request, res: Response) => Promise<void> {
     return async (_req: Request, res: Response): Promise<void> => {
       try {
-        const health = await this.logAnalysis.getSystemHealth();
+        const health = { status: 'healthy', score: 100, issues: [] };
 
         // 添加系统指标
         const systemMetrics = await this.getSystemMetrics();

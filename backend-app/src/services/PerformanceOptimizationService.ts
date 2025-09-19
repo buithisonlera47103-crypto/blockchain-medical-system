@@ -108,10 +108,11 @@ export class PerformanceOptimizationService {
     }, 10000);
     
     // 将定时器引用存储到全局变量中，便于测试清理
-    if (!(global as any).performanceTimers) {
-      (global as any).performanceTimers = [];
+    const g = global as unknown as { performanceTimers?: Array<NodeJS.Timeout | undefined> };
+    if (!g.performanceTimers) {
+      g.performanceTimers = [];
     }
-    (global as any).performanceTimers.push(this.tpsInterval, this.metricsInterval);
+    g.performanceTimers.push(this.tpsInterval, this.metricsInterval);
   }
 
   /**
@@ -573,7 +574,7 @@ export class PerformanceOptimizationService {
 
       if (data) {
         this.recordMetric('cache_hit', 1);
-        return JSON.parse(data);
+        return JSON.parse(String(data));
       }
 
       this.recordMetric('cache_miss', 1);

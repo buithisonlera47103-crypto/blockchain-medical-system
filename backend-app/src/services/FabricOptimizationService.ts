@@ -5,7 +5,7 @@
 
 import { Gateway } from 'fabric-network';
 
-import { enhancedLogger } from '../utils/enhancedLogger';
+import { logger } from '../utils/logger';
 
 /**
  * 批量操作接口
@@ -71,14 +71,14 @@ interface CacheItem {
  */
 export class FabricOptimizationService {
   private static instance: FabricOptimizationService;
-  private readonly logger: typeof enhancedLogger;
+  private readonly logger: typeof logger;
   private config: OptimizationConfig;
   private cache: Map<string, CacheItem> = new Map();
   private connectionPool: Gateway[] = [];
   private performanceMetrics: PerformanceMetrics;
 
-  private constructor(logger?: typeof enhancedLogger) {
-    this.logger = logger ?? enhancedLogger;
+  private constructor(loggerInstance?: typeof logger) {
+    this.logger = loggerInstance ?? logger;
 
     // 初始化配置
     this.config = {
@@ -107,7 +107,7 @@ export class FabricOptimizationService {
   /**
    * 获取单例实例
    */
-  public static getInstance(logger?: typeof enhancedLogger): FabricOptimizationService {
+  public static getInstance(_loggerInstance?: typeof logger): FabricOptimizationService {
     if (!FabricOptimizationService.instance) {
       FabricOptimizationService.instance = new FabricOptimizationService(logger);
     }

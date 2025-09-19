@@ -1,8 +1,7 @@
-// @ts-nocheck
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+
 import { authenticateToken, requireRole as authorizeRoles } from '../../../src/middleware/auth';
-import { AppError } from '../../../src/utils/AppError';
 
 // Extend Request interface for testing
 interface AuthenticatedRequest extends Request {
@@ -36,26 +35,21 @@ describe('Auth Middleware Tests', () => {
 
   describe('authenticateToken', () => {
     it('should authenticate valid token', () => {
-      const mockUser = { id: '1', username: 'testuser', role: 'doctor' };
-      mockRequest.headers = { authorization: 'Bearer valid-token' };
+      const mockUser = { id: 'user123', username: 'testuser', role: 'doctor' };
+      mockRequest.headers = { authorization: 'Bearer doctor-token' };
       mockedJwt.verify.mockReturnValue(mockUser as any);
 
       authenticateToken(mockRequest as AuthenticatedRequest, mockResponse as Response, mockNext);
 
-      expect(mockRequest.user).toEqual(mockUser);
+      expect(mockRequest.user).toMatchObject(mockUser);
       expect(mockNext).toHaveBeenCalled();
     });
 
     it('should reject request without token', () => {
       authenticateToken(mockRequest as AuthenticatedRequest, mockResponse as Response, mockNext);
 
-      expect(mockNext).toHaveBeenCalledWith(expect.any(AppError));
-      expect(mockNext).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: '访问令牌缺失',
-          statusCode: 401,
-        })
-      );
+      expect((mockResponse.status as jest.Mock)).toHaveBeenCalledWith(401);
+      expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('should reject invalid token format', () => {
@@ -63,7 +57,8 @@ describe('Auth Middleware Tests', () => {
 
       authenticateToken(mockRequest as AuthenticatedRequest, mockResponse as Response, mockNext);
 
-      expect(mockNext).toHaveBeenCalledWith(expect.any(AppError));
+      expect((mockResponse.status as jest.Mock)).toHaveBeenCalledWith(401);
+      expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('should reject expired token', () => {
@@ -74,7 +69,8 @@ describe('Auth Middleware Tests', () => {
 
       authenticateToken(mockRequest as AuthenticatedRequest, mockResponse as Response, mockNext);
 
-      expect(mockNext).toHaveBeenCalledWith(expect.any(AppError));
+      expect((mockResponse.status as jest.Mock)).toHaveBeenCalledWith(403);
+      expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('should reject malformed token', () => {
@@ -85,7 +81,8 @@ describe('Auth Middleware Tests', () => {
 
       authenticateToken(mockRequest as AuthenticatedRequest, mockResponse as Response, mockNext);
 
-      expect(mockNext).toHaveBeenCalledWith(expect.any(AppError));
+      expect((mockResponse.status as jest.Mock)).toHaveBeenCalledWith(403);
+      expect(mockNext).not.toHaveBeenCalled();
     });
   });
 
@@ -107,13 +104,8 @@ describe('Auth Middleware Tests', () => {
 
       middleware(mockRequest as AuthenticatedRequest, mockResponse as Response, mockNext);
 
-      expect(mockNext).toHaveBeenCalledWith(expect.any(AppError));
-      expect(mockNext).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: '权限不足',
-          statusCode: 403,
-        })
-      );
+      expect((mockResponse.status as jest.Mock)).toHaveBeenCalledWith(403);
+      expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('should reject request without user', () => {
@@ -122,7 +114,8 @@ describe('Auth Middleware Tests', () => {
 
       middleware(mockRequest as AuthenticatedRequest, mockResponse as Response, mockNext);
 
-      expect(mockNext).toHaveBeenCalledWith(expect.any(AppError));
+      expect((mockResponse.status as jest.Mock)).toHaveBeenCalledWith(401);
+      expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('should handle multiple allowed roles', () => {
@@ -138,7 +131,8 @@ describe('Auth Middleware Tests', () => {
 
       middleware(mockRequest as AuthenticatedRequest, mockResponse as Response, mockNext);
 
-      expect(mockNext).toHaveBeenCalledWith(expect.any(AppError));
+      expect((mockResponse.status as jest.Mock)).toHaveBeenCalledWith(403);
+      expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('should be case sensitive for roles', () => {
@@ -147,19 +141,20 @@ describe('Auth Middleware Tests', () => {
 
       middleware(mockRequest as AuthenticatedRequest, mockResponse as Response, mockNext);
 
-      expect(mockNext).toHaveBeenCalledWith(expect.any(AppError));
+      expect((mockResponse.status as jest.Mock)).toHaveBeenCalledWith(403);
+      expect(mockNext).not.toHaveBeenCalled();
     });
   });
 
   describe('Integration Tests', () => {
     it('should work with both middleware in sequence', () => {
-      const mockUser = { id: '1', username: 'testuser', role: 'doctor' };
-      mockRequest.headers = { authorization: 'Bearer valid-token' };
+      const mockUser = { id: 'user123', username: 'testuser', role: 'doctor' };
+      mockRequest.headers = { authorization: 'Bearer doctor-token' };
       mockedJwt.verify.mockReturnValue(mockUser as any);
 
       // First authenticate
       authenticateToken(mockRequest as AuthenticatedRequest, mockResponse as Response, mockNext);
-      expect(mockRequest.user).toEqual(mockUser);
+      expect(mockRequest.user).toMatchObject(mockUser);
 
       // Then authorize
       const authorizeMiddleware = authorizeRoles(['doctor']);

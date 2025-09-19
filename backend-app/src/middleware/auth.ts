@@ -30,7 +30,7 @@ function cacheGet(token: string): JWTPayload | null {
 }
 function cacheSet(token: string, payload: JWTPayload): void {
   const expSec = typeof (payload as unknown as { exp?: number }).exp === 'number'
-    ? (payload as unknown as { exp?: number }).exp as number
+    ? (payload as unknown as { exp?: number }).exp
     : Math.floor(Date.now() / 1000) + 30; // default 30s cache
   const expMs = expSec * 1000;
   // Add small safety margin
@@ -227,3 +227,13 @@ export function optionalAuth(req: AuthenticatedRequest, _res: Response, next: Ne
 
   next();
 }
+
+// Backward-compatible role-specific helpers used by some tests
+export function requireAdmin(): (req: AuthenticatedRequest, res: Response, next: NextFunction) => void {
+  return requireRole(['admin']);
+}
+
+export function requireDoctor(): (req: AuthenticatedRequest, res: Response, next: NextFunction) => void {
+  return requireRole(['doctor']);
+}
+

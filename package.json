@@ -11,5 +11,9 @@
   "engines": {
     "node": ">=16.0.0",
     "npm": ">=8.0.0"
+  },
+  "devDependencies": {
+    "depcheck": "^1.4.7",
+    "ts-prune": "^0.10.3"
   }
 }

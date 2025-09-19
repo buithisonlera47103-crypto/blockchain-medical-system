@@ -3,7 +3,6 @@
  * Provides secure environment variable handling with validation and defaults
  */
 
-import { BaseAppError, ErrorCategory } from '../utils/EnhancedAppError';
 import { logger } from '../utils/logger';
 
 export interface DatabaseConfig {
@@ -120,12 +119,7 @@ class EnvironmentManager {
     const missingVars = requiredVars.filter(varName => !process.env[varName]);
 
     if (missingVars.length > 0) {
-      throw new BaseAppError(
-        `Missing required environment variables: ${missingVars.join(', ')}`,
-        'REQUIRED_ENV_VARS',
-        500,
-        ErrorCategory.VALIDATION
-      );
+      throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
     }
 
     // Production-specific validations
@@ -141,12 +135,7 @@ class EnvironmentManager {
       const missingProdVars = productionRequiredVars.filter(varName => !process.env[varName]);
 
       if (missingProdVars.length > 0) {
-        throw new BaseAppError(
-          `Missing production environment variables: ${missingProdVars.join(', ')}`,
-          'PRODUCTION_ENV_VARS',
-          500,
-          ErrorCategory.VALIDATION
-        );
+        throw new Error(`Missing production environment variables: ${missingProdVars.join(', ')}`);
       }
     }
   }
@@ -207,16 +196,11 @@ class EnvironmentManager {
 
     // Validate secret lengths
     if (jwtSecret.length < 32) {
-      throw new BaseAppError('JWT_SECRET must be at least 32 characters long', 'JWT_SECRET', 500, ErrorCategory.VALIDATION);
+      throw new Error('JWT_SECRET must be at least 32 characters long');
     }
 
     if (encryptionKey.length < 32) {
-      throw new BaseAppError(
-        'ENCRYPTION_KEY must be at least 32 characters long',
-        'ENCRYPTION_KEY',
-        500,
-        ErrorCategory.VALIDATION
-      );
+      throw new Error('ENCRYPTION_KEY must be at least 32 characters long');
     }
 
     return {
@@ -266,16 +250,16 @@ class EnvironmentManager {
   private validateConfiguration(): void {
     // Validate port ranges
     if (this.config.app.port < 1 || this.config.app.port > 65535) {
-      throw new BaseAppError('Port must be between 1 and 65535', 'PORT', 500, ErrorCategory.VALIDATION);
+      throw new Error('Port must be between 1 and 65535');
     }
 
     if (this.config.database.port < 1 || this.config.database.port > 65535) {
-      throw new BaseAppError('Database port must be between 1 and 65535', 'DB_PORT', 500, ErrorCategory.VALIDATION);
+      throw new Error('Database port must be between 1 and 65535');
     }
 
     // Validate bcrypt rounds
     if (this.config.security.bcryptRounds < 10 || this.config.security.bcryptRounds > 15) {
-      throw new BaseAppError('Bcrypt rounds must be between 10 and 15', 'BCRYPT_ROUNDS', 500, ErrorCategory.VALIDATION);
+      throw new Error('Bcrypt rounds must be between 10 and 15');
     }
 
     // Validate allowed origins in production

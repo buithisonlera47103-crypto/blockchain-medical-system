@@ -1,7 +1,7 @@
 import type { Pool, RowDataPacket } from 'mysql2/promise';
 import nodemailer from 'nodemailer';
 
-import { enhancedLogger } from '../utils/enhancedLogger';
+import { logger } from '../utils/logger';
 
 
 interface NotificationChannel {
@@ -37,13 +37,13 @@ interface NotificationStats {
 
 export class NotificationService {
   private readonly db: Pool;
-  private readonly logger: typeof enhancedLogger;
+  private readonly logger: typeof logger;
   private emailTransporter: nodemailer.Transporter | null = null;
   private readonly channels: Map<string, NotificationChannel> = new Map();
 
   constructor(db: Pool) {
     this.db = db;
-    this.logger = enhancedLogger;
+    this.logger = logger;
 
     setImmediate(() => {
       void this.initializeChannels();

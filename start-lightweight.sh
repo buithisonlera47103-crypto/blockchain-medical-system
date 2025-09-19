@@ -11,6 +11,7 @@ export WARM_CACHE_ENABLED=false
 export METRICS_INTERVAL_MS=300000  # 5分钟收集一次指标
 export WARM_GETCONTRACTINFO_MS=600000  # 10分钟预热一次
 export WARM_LISTRECORDS_MS=1200000     # 20分钟预热一次
+export NODE_OPTIONS="--max-old-space-size=768"
 export NODE_ENV=development
 
 echo "📝 已设置轻量模式环境变量"
@@ -20,14 +21,14 @@ echo "   METRICS_INTERVAL_MS=300000 (5分钟)"
 
 # 阶段1: 启动基础数据服务
 echo "🔸 阶段1: 启动基础数据服务 (MySQL + Redis)..."
-docker-compose up -d mysql redis
+docker-compose -f docker-compose.lightweight.yml up -d mysql redis
 
 echo "⏳ 等待数据库服务就绪..."
 sleep 20
 
 # 阶段2: 启动IPFS (只启动一个节点)
 echo "🔸 阶段2: 启动IPFS存储..."
-docker-compose up -d ipfs-node1
+docker-compose -f docker-compose.lightweight.yml up -d ipfs-node1
 
 echo "⏳ 等待IPFS服务就绪..."
 sleep 15
@@ -36,11 +37,11 @@ sleep 15
 read -p "是否启动区块链服务? (Fabric CA, Orderer, Peer) [y/N]: " start_blockchain
 if [[ $start_blockchain =~ ^[Yy]$ ]]; then
     echo "🔸 阶段3: 启动区块链服务..."
-    docker-compose up -d ca.org1.example.com
+    docker-compose -f docker-compose.lightweight.yml up -d ca.org1.example.com
     sleep 10
-    docker-compose up -d orderer.example.com
+    docker-compose -f docker-compose.lightweight.yml up -d orderer.example.com
     sleep 10
-    docker-compose up -d peer0.org1.example.com
+    docker-compose -f docker-compose.lightweight.yml up -d peer0.org1.example.com
     echo "⏳ 等待区块链服务就绪..."
     sleep 30
 else
@@ -49,7 +50,7 @@ fi
 
 # 阶段4: 启动后端应用
 echo "🔸 阶段4: 启动后端应用..."
-docker-compose up -d backend
+docker-compose -f docker-compose.lightweight.yml up -d backend
 
 echo "⏳ 等待后端服务就绪..."
 sleep 15
@@ -58,7 +59,7 @@ sleep 15
 read -p "是否启动前端应用? [y/N]: " start_frontend
 if [[ $start_frontend =~ ^[Yy]$ ]]; then
     echo "🔸 阶段5: 启动前端应用..."
-    docker-compose up -d frontend
+    docker-compose -f docker-compose.lightweight.yml up -d frontend
     sleep 10
     echo "🌐 前端应用地址: http://localhost:3001"
 else
@@ -69,7 +70,7 @@ echo ""
 echo "✅ 轻量级系统启动完成!"
 echo ""
 echo "📋 服务状态:"
-docker-compose ps
+docker-compose -f docker-compose.lightweight.yml ps
 
 echo ""
 echo "🔗 服务地址:"

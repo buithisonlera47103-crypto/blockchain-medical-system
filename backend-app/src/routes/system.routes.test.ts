@@ -1,17 +1,7 @@
 import request from 'supertest';
 
 
-// Mock enhanced logger used by middleware to avoid side effects
-jest.mock('../utils/enhancedLogger', () => ({
-  enhancedLogger: {
-    error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn(), log: jest.fn(), http: jest.fn(), trace: jest.fn()
-  },
-  logger: {
-    error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn(), log: jest.fn()
-  },
-  __esModule: true,
-  default: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn(), log: jest.fn() },
-}));
+// Mock logger used by middleware to avoid side effects
 
 // Mock logger to silence output in tests
 jest.mock('../utils/logger', () => ({
@@ -37,8 +27,9 @@ jest.mock('../services/BlockchainService', () => ({
   },
 }));
 
-import systemRouter from './system';
 import { createTestApp } from '../tests/helpers/testApp';
+
+import systemRouter from './system';
 
 describe('system routes', () => {
   const app = createTestApp({
@@ -63,7 +54,7 @@ describe('system routes', () => {
       appInst.use((err: any, _req: any, res: any, _next: any) => {
         // eslint-disable-next-line no-console
         console.error('DBG route error:', err);
-        const msg = err && err.message ? err.message : String(err);
+        const msg = err?.message ? err.message : String(err);
         res.status(500).json({ error: msg });
       });
       // Mount system routes under the expected prefix before 404 handler

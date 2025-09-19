@@ -11,7 +11,7 @@
 import type { RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 
 import { pool } from '../config/database-mysql';
-import { BusinessLogicError } from '../utils/EnhancedAppError';
+import { AppError } from '../utils/AppError';
 import { logger } from '../utils/logger';
 
 import { medicalRecordCache } from './CacheService';
@@ -127,7 +127,7 @@ export class LayeredStorageService {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       logger.error('分层存储服务初始化失败', { error: message });
-      throw new BusinessLogicError('分层存储服务初始化失败');
+      throw new AppError('分层存储服务初始化失败', 500);
     }
   }
 
@@ -194,8 +194,8 @@ export class LayeredStorageService {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       logger.error('数据检索失败', { recordId, dataType, error: message });
-      throw new BusinessLogicError(
-        `数据检索失败: ${message}`
+      throw new AppError(
+        `数据检索失败: ${message}`,
       );
     } finally {
       const duration = Date.now() - startTime;

@@ -23,7 +23,7 @@ import { pool } from '../config/database-mysql';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/auth';
 import { cacheService } from '../services/CacheService';
-import { enhancedLogger as logger } from '../utils/enhancedLogger';
+import { logger } from '../utils/logger';
 
 // TOTP helpers (RFC 6238 using HMAC-SHA1, 30s period, 6 digits)
 function hotpHex(secretHex: string, counter: number, digits = 6): string {
@@ -37,8 +37,8 @@ function hotpHex(secretHex: string, counter: number, digits = 6): string {
   if (hmac.length < 20) {
     throw new Error('Invalid HMAC length');
   }
-  const offset = (hmac[hmac.length - 1] as number) & 0x0f;
-  const code = (((hmac[offset] as number) & 0x7f) << 24) | (((hmac[offset + 1] as number) & 0xff) << 16) | (((hmac[offset + 2] as number) & 0xff) << 8) | ((hmac[offset + 3] as number) & 0xff);
+  const offset = (hmac[hmac.length - 1]) & 0x0f;
+  const code = (((hmac[offset]) & 0x7f) << 24) | (((hmac[offset + 1]) & 0xff) << 16) | (((hmac[offset + 2]) & 0xff) << 8) | ((hmac[offset + 3]) & 0xff);
   const str = (code % 10 ** digits).toString().padStart(digits, '0');
   return str;
 }
@@ -1196,7 +1196,7 @@ router.post(
   '/mfa/setup',
   authenticateToken,
   asyncHandler(async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    const userId = req.user?.id as string;
+    const userId = req.user?.id;
     const username = req.user?.username;
     const buf = crypto.randomBytes(20);
     const secretHex = buf.toString('hex');
@@ -1220,7 +1220,7 @@ router.post(
       res.status(400).json({ error: 'INVALID_REQUEST', details: errors.array(), statusCode: 400 });
       return;
     }
-    const userId = req.user?.id as string;
+    const userId = req.user?.id;
     const code: string = String(req.body.code);
     const secretHex = await cacheService.get<string>(`mfa:setup:${userId}`);
     if (!secretHex) {
@@ -1248,7 +1248,7 @@ router.post(
       res.status(400).json({ error: 'INVALID_REQUEST', details: errors.array(), statusCode: 400 });
       return;
     }
-    const userId = req.user?.id as string;
+    const userId = req.user?.id;
     const password: string = String(req.body.password);
     const [rows] = (await pool.query('SELECT password_hash FROM users WHERE user_id = ?', [userId])) as [Array<{ password_hash: string }>, unknown];
     const ok = rows[0] && (await (await getBcrypt()).compare(password, rows[0].password_hash));
@@ -1258,6 +1258,163 @@ router.post(
     }
     await pool.query('UPDATE users SET mfa_enabled = FALSE, mfa_secret = NULL, updated_at = NOW() WHERE user_id = ?', [userId]);
     res.json({ message: 'MFA_DISABLED' });
+  })
+);
+
+// 生物识别注册
+router.post(
+  '/biometric/enroll',
+  authenticateToken,
+  [
+    body('biometricType').isIn(['fingerprint', 'face', 'voice', 'iris']).withMessage('biometricType必须是有效的生物识别类型'),
+    body('biometricData').isString().isLength({ min: 1 }).withMessage('biometricData不能为空'),
+  ],
+  asyncHandler(async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      res.status(400).json({ error: 'INVALID_REQUEST', details: errors.array(), statusCode: 400 });
+      return;
+    }
+
+    const userId = req.user?.id;
+    const { biometricType, biometricData } = req.body;
+
+    try {
+      // 获取外部集成服务
+      const externalService = req.app.locals.externalIntegrationService;
+      if (!externalService) {
+        res.status(500).json({ error: 'SERVICE_UNAVAILABLE', message: '生物识别服务不可用', statusCode: 500 });
+        return;
+      }
+
+      const result = await externalService.enrollBiometric(userId, biometricType, biometricData);
+
+      logger.info('Biometric enrollment completed', { userId, biometricType, templateId: result.templateId });
+      res.json(result);
+    } catch (error) {
+      logger.error('Biometric enrollment failed', { error, userId, biometricType });
+      res.status(500).json({ error: 'BIOMETRIC_ENROLLMENT_FAILED', message: '生物识别注册失败', statusCode: 500 });
+    }
+  })
+);
+
+// 生物识别验证
+router.post(
+  '/biometric/verify',
+  [
+    body('userId').isString().withMessage('userId必须是字符串'),
+    body('biometricType').isIn(['fingerprint', 'face', 'voice', 'iris']).withMessage('biometricType必须是有效的生物识别类型'),
+    body('biometricData').isString().isLength({ min: 1 }).withMessage('biometricData不能为空'),
+    body('deviceId').optional().isString().withMessage('deviceId必须是字符串'),
+  ],
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      res.status(400).json({ error: 'INVALID_REQUEST', details: errors.array(), statusCode: 400 });
+      return;
+    }
+
+    const { userId, biometricType, biometricData, deviceId } = req.body;
+
+    try {
+      // 获取外部集成服务
+      const externalService = req.app.locals.externalIntegrationService;
+      if (!externalService) {
+        res.status(500).json({ error: 'SERVICE_UNAVAILABLE', message: '生物识别服务不可用', statusCode: 500 });
+        return;
+      }
+
+      const result = await externalService.verifyBiometric({
+        userId,
+        biometricType,
+        biometricData,
+        deviceId,
+      });
+
+      logger.info('Biometric verification completed', { userId, biometricType, verified: result.verified });
+      res.json(result);
+    } catch (error) {
+      logger.error('Biometric verification failed', { error, userId, biometricType });
+      res.status(500).json({ error: 'BIOMETRIC_VERIFICATION_FAILED', message: '生物识别验证失败', statusCode: 500 });
+    }
+  })
+);
+
+// SMS多因素认证发送
+router.post(
+  '/mfa/sms/send',
+  authenticateToken,
+  [
+    body('phoneNumber').isMobilePhone('any').withMessage('phoneNumber必须是有效的手机号码'),
+  ],
+  asyncHandler(async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      res.status(400).json({ error: 'INVALID_REQUEST', details: errors.array(), statusCode: 400 });
+      return;
+    }
+
+    const userId = req.user?.id;
+    const { phoneNumber } = req.body;
+
+    try {
+      // 生成6位数验证码
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+      // 缓存验证码（5分钟有效期）
+      await cacheService.set(`sms:mfa:${userId}`, { code, phoneNumber }, 300);
+
+      // 这里应该调用SMS服务发送验证码
+      // 为了演示，我们只是记录日志
+      logger.info('SMS MFA code generated', { userId, phoneNumber: phoneNumber.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') });
+
+      res.json({ message: 'SMS验证码已发送', expiresIn: 300 });
+    } catch (error) {
+      logger.error('SMS MFA send failed', { error, userId });
+      res.status(500).json({ error: 'SMS_MFA_SEND_FAILED', message: 'SMS验证码发送失败', statusCode: 500 });
+    }
+  })
+);
+
+// SMS多因素认证验证
+router.post(
+  '/mfa/sms/verify',
+  authenticateToken,
+  [
+    body('code').isLength({ min: 6, max: 6 }).isNumeric().withMessage('code必须是6位数字'),
+  ],
+  asyncHandler(async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      res.status(400).json({ error: 'INVALID_REQUEST', details: errors.array(), statusCode: 400 });
+      return;
+    }
+
+    const userId = req.user?.id;
+    const { code } = req.body;
+
+    try {
+      // 获取缓存的验证码
+      const cachedData = await cacheService.get<{ code: string; phoneNumber: string }>(`sms:mfa:${userId}`);
+      if (!cachedData) {
+        res.status(400).json({ error: 'CODE_EXPIRED', message: '验证码已过期', statusCode: 400 });
+        return;
+      }
+
+      if (cachedData.code !== code) {
+        res.status(401).json({ error: 'INVALID_CODE', message: '验证码错误', statusCode: 401 });
+        return;
+      }
+
+      // 验证成功，清除缓存
+      await cacheService.delete(`sms:mfa:${userId}`);
+
+      logger.info('SMS MFA verification successful', { userId });
+      res.json({ message: 'SMS验证成功', verified: true });
+    } catch (error) {
+      logger.error('SMS MFA verification failed', { error, userId });
+      res.status(500).json({ error: 'SMS_MFA_VERIFY_FAILED', message: 'SMS验证失败', statusCode: 500 });
+    }
   })
 );
 

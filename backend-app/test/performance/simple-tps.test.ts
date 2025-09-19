@@ -88,7 +88,7 @@ describe('Simple TPS Performance Test', () => {
   });
 
   test('should demonstrate encryption performance baseline', async () => {
-    const crypto = require('crypto');
+    const crypto = await import('crypto');
     const iterations = 1000;
     
     const startTime = performance.now();

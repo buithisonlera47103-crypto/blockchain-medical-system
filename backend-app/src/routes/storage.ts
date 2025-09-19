@@ -6,12 +6,12 @@ import express, { Response, NextFunction } from 'express';
 import { body, query, param } from 'express-validator';
 
 import { asyncHandler } from '../middleware/asyncHandler';
-import { enhancedAuthenticateToken } from '../middleware/enhancedAuth';
+import { authenticateToken } from '../middleware/auth';
 import { validateInput } from '../middleware/validation';
 import { layeredStorageService } from '../services/LayeredStorageService';
 import { EnhancedAuthRequest, AuthenticatedRequest } from '../types/express-extensions';
 import ApiResponseBuilder from '../utils/ApiResponseBuilder';
-import { SecurityError } from '../utils/EnhancedAppError';
+import { AppError } from '../utils/AppError';
 import { logger } from '../utils/logger';
 
 const router = express.Router();
@@ -54,12 +54,12 @@ const router = express.Router();
  */
 router.get(
   '/metrics',
-  enhancedAuthenticateToken,
+  authenticateToken,
   asyncHandler(async (req: EnhancedAuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       // 检查管理员权限
       if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
-        throw new SecurityError('只有管理员可以查看存储指标');
+        throw new AppError('只有管理员可以查看存储指标', 403);
       }
 
       const metrics = layeredStorageService.getStorageMetrics();
@@ -97,12 +97,12 @@ router.get(
  */
 router.get(
   '/access-patterns',
-  enhancedAuthenticateToken,
+  authenticateToken,
   asyncHandler(async (req: EnhancedAuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       // 检查管理员权限
       if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
-        throw new SecurityError('只有管理员可以查看访问模式');
+        throw new AppError('只有管理员可以查看访问模式', 403);
       }
 
       const analysis = layeredStorageService.getAccessPatternAnalysis();
@@ -140,12 +140,12 @@ router.get(
  */
 router.get(
   '/health',
-  enhancedAuthenticateToken,
+  authenticateToken,
   asyncHandler(async (req: EnhancedAuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       // 检查管理员权限
       if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
-        throw new SecurityError('只有管理员可以执行健康检查');
+        throw new AppError('只有管理员可以执行健康检查', 403);
       }
 
       // 临时实现：返回基本健康状态
@@ -195,12 +195,12 @@ router.get(
  */
 router.post(
   '/lifecycle/execute',
-  enhancedAuthenticateToken,
+  authenticateToken,
   asyncHandler(async (req: EnhancedAuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       // 检查管理员权限
       if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
-        throw new SecurityError('只有管理员可以执行数据生命周期管理');
+        throw new AppError('只有管理员可以执行数据生命周期管理', 403);
       }
 
       logger.info('手动执行数据生命周期管理', {
@@ -243,12 +243,12 @@ router.post(
  */
 router.post(
   '/cache/warmup',
-  enhancedAuthenticateToken,
+  authenticateToken,
   asyncHandler(async (req: EnhancedAuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       // 检查管理员权限
       if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
-        throw new SecurityError('只有管理员可以执行缓存预热');
+        throw new AppError('只有管理员可以执行缓存预热', 403);
       }
 
       logger.info('手动执行缓存预热', {
@@ -305,7 +305,7 @@ router.post(
  */
 router.get(
   '/data/:recordId',
-  enhancedAuthenticateToken,
+  authenticateToken,
   [
     param('recordId').notEmpty().withMessage('记录ID不能为空'),
     query('dataType')
@@ -412,7 +412,7 @@ router.get(
  */
 router.post(
   '/data/:recordId',
-  enhancedAuthenticateToken,
+  authenticateToken,
   [
     param('recordId').notEmpty().withMessage('记录ID不能为空'),
     body('data').notEmpty().withMessage('数据不能为空'),

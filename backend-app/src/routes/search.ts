@@ -75,7 +75,7 @@ let searchInitPromise: Promise<void> | null = null;
 /* eslint-disable @typescript-eslint/prefer-nullish-coalescing */
 
 async function ensureSearchInitialized(): Promise<void> {
-  if (!searchInitPromise) {
+  if (searchInitPromise === null) {
     searchInitPromise = (async (): Promise<void> => {
       try {
         await searchService.initialize();

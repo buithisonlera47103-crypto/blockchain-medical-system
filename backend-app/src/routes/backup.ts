@@ -5,7 +5,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 
-import { authenticateToken } from '../middleware/authMiddleware';
+import { authenticateToken } from '../middleware/auth';
 import { BackupService } from '../services/BackupService';
 import type { EnhancedAuthRequest } from '../types/express-extensions';
 import { UserRole } from '../types/User';

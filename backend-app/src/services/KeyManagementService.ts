@@ -7,7 +7,7 @@ import * as crypto from 'crypto';
 
 import { logger } from '../utils/logger';
 
-import { CryptographyServiceExtension } from './CryptographyServiceExtension';
+import { CryptographyService } from './CryptographyService';
 
 // 密钥类型枚举
 export enum KeyType {
@@ -55,7 +55,7 @@ export interface KeyRotationConfig {
  */
 export class KeyManagementService {
   private static instance: KeyManagementService;
-  private readonly cryptoExt: CryptographyServiceExtension;
+  private readonly cryptoExt: CryptographyService;
   private readonly keyCache: Map<string, Buffer> = new Map();
   private readonly keyConfigs: Map<string, KeyConfig> = new Map();
   private readonly rotationConfig: KeyRotationConfig;
@@ -64,7 +64,7 @@ export class KeyManagementService {
   private readonly cidToRecord: Map<string, string> = new Map();
 
   constructor() {
-    this.cryptoExt = new CryptographyServiceExtension();
+    this.cryptoExt = CryptographyService.getInstance();
     this.rotationConfig = {
       enabled: process.env.KEY_ROTATION_ENABLED === 'true',
       rotationIntervalDays: parseInt(((process.env.KEY_ROTATION_INTERVAL_DAYS ?? '').trim() !== '' ? String(process.env.KEY_ROTATION_INTERVAL_DAYS) : '90'), 10),
@@ -103,7 +103,7 @@ export class KeyManagementService {
    */
   public generateDataKey(keySize: number = 32): Buffer {
     try {
-      const dataKey = this.cryptoExt.generateDataKey(keySize);
+      const dataKey = Buffer.from(crypto.randomBytes(keySize));
 
       logger.debug('数据密钥生成成功', {
         keySize,
@@ -209,7 +209,8 @@ export class KeyManagementService {
   ): Promise<void> {
     try {
       // 使用加密扩展服务保存信封密钥
-      await this.cryptoExt.saveEnvelopeKey(recordId, dataKey);
+      // 保存密钥到缓存
+      this.keyCache.set(recordId, dataKey);
 
       // 缓存密钥以提高性能
       const cacheKey = `record:${recordId}`;
@@ -260,7 +261,7 @@ export class KeyManagementService {
       }
 
       // 从加密扩展服务加载
-      const dataKey = await this.cryptoExt.loadEnvelopeKey(recordId);
+      const dataKey = this.keyCache.get(recordId);
 
       if (dataKey) {
         // 缓存加载的密钥

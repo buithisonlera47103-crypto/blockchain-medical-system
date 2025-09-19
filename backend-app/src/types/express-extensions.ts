@@ -71,6 +71,8 @@ declare module 'express-serve-static-core' {
     startTime?: number;
     deviceFingerprint?: string;
     csrfToken?: string;
+    file?: Express.Multer.File;
+    files?: Express.Multer.File[] | { [fieldname: string]: Express.Multer.File[] };
   }
 }
 

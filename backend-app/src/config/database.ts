@@ -63,14 +63,14 @@ const poolOptions: PoolOptions = {
   keepAliveInitialDelay: 10000,
   connectTimeout: parseInt(process.env['DB_CONNECT_TIMEOUT'] ?? '10000', 10),
   // mysqlConfig.ssl can be boolean|string|SslOptions; PoolOptions expects SslOptions|undefined
-  ssl: typeof mysqlConfig.ssl === 'object' ? (mysqlConfig.ssl as SslOptions) : undefined,
+  ssl: typeof mysqlConfig.ssl === 'object' ? (mysqlConfig.ssl) : undefined,
 };
 
 // Check if we're in test environment and use mock
 const pool: Pool = ((): Pool => {
   if (process.env['NODE_ENV'] === 'test') {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports, jest/no-mocks-import
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires, jest/no-mocks-import
       const mockDatabase = require('../../test/__mocks__/database');
       return mockDatabase.pool as Pool;
     } catch (error: unknown) {

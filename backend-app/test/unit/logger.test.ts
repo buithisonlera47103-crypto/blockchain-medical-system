@@ -49,6 +49,8 @@ describe('Logger Tests', () => {
     const debugSpy = jest.spyOn(console, 'log').mockImplementation();
     logger.debug('Test debug message');
 
+    expect(debugSpy).not.toHaveBeenCalled();
+
     process.env["NODE_ENV"] = originalEnv;
     debugSpy.mockRestore();
   });

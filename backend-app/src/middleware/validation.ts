@@ -7,24 +7,14 @@ import { Request, Response, NextFunction } from 'express';
 import DOMPurify from 'isomorphic-dompurify';
 import Joi from 'joi';
 
-import { ValidationError } from '../utils/EnhancedAppError';
+import { AppError } from '../utils/AppError';
 import { logger } from '../utils/logger';
 
-// Custom Joi extensions for medical data
-const customJoi = Joi.extend({
-  type: 'medicalId',
-  base: Joi.string(),
-  messages: {
-    'medicalId.invalid': 'Invalid medical ID format',
-  },
-  validate(value, helpers) {
-    // Medical ID should be alphanumeric with specific format
-    if (!/^[A-Z0-9]{8,12}$/.test(value)) {
-      return { value, errors: helpers.error('medicalId.invalid') };
-    }
-    return { value };
-  },
-});
+// Medical ID helper without using Joi.extend (compatible with all environments)
+const medicalId = (): Joi.StringSchema =>
+  Joi.string()
+    .pattern(/^[A-Z0-9]{8,12}$/)
+    .messages({ 'string.pattern.base': 'Invalid medical ID format' });
 
 // Validation schemas for different endpoints
 export const validationSchemas = {
@@ -41,7 +31,7 @@ export const validationSchemas = {
     role: Joi.string().valid('patient', 'doctor', 'admin', 'nurse').required(),
     licenseNumber: Joi.when('role', {
       is: Joi.string().valid('doctor', 'nurse'),
-      then: customJoi.medicalId().required(),
+      then: medicalId().required(),
       otherwise: Joi.optional(),
     }),
     department: Joi.when('role', {
@@ -65,7 +55,7 @@ export const validationSchemas = {
 
   // Medical record operations
   createMedicalRecord: Joi.object({
-    patientId: customJoi.medicalId().required(),
+    patientId: medicalId().required(),
     recordType: Joi.string()
       .valid('diagnosis', 'prescription', 'lab_result', 'imaging', 'surgery', 'consultation')
       .required(),
@@ -124,8 +114,8 @@ export const validationSchemas = {
 
   // Permission management
   grantPermission: Joi.object({
-    patientId: customJoi.medicalId().required(),
-    doctorId: customJoi.medicalId().required(),
+    patientId: medicalId().required(),
+    doctorId: medicalId().required(),
     recordIds: Joi.array().items(Joi.string().uuid()).optional(),
     permissionType: Joi.string().valid('read', 'write', 'full').required(),
     expiresAt: Joi.date().iso().min('now').optional(),
@@ -135,7 +125,7 @@ export const validationSchemas = {
 
   // Search and query
   searchRecords: Joi.object({
-    patientId: customJoi.medicalId().optional(),
+    patientId: medicalId().optional(),
     recordType: Joi.string()
       .valid('diagnosis', 'prescription', 'lab_result', 'imaging', 'surgery', 'consultation')
       .optional(),
@@ -189,7 +179,7 @@ export function validateInput(
       const schema = validationSchemas[schemaName];
 
       if (!schema) {
-        throw new ValidationError(`Validation schema '${schemaName}' not found`);
+        throw new AppError(`Validation schema '${schemaName}' not found`, 400);
       }
 
       // Debug logging
@@ -223,14 +213,14 @@ export function validateInput(
           ipAddress: req.ip,
         });
 
-        throw new ValidationError('Input validation failed', { validationErrors: details });
+        throw new AppError('Input validation failed', 400);
       }
 
       // Replace request body with validated and sanitized data
       req.body = value;
       next();
     } catch (error) {
-      if (error instanceof ValidationError) {
+      if (error instanceof AppError) {
         next(error);
       } else {
         logger.error('Validation middleware error', {
@@ -238,7 +228,7 @@ export function validateInput(
           stack: error instanceof Error ? error.stack : undefined,
           requestId: (req as Request & { requestId?: string }).requestId,
         });
-        next(new ValidationError('Validation processing failed'));
+        next(new AppError('Validation processing failed', 400));
       }
     }
   };
@@ -268,7 +258,7 @@ export function validateSensitiveOperation(): (req: Request, _res: Response, nex
           userAgent: req.get('User-Agent'),
         });
 
-        throw new ValidationError('Invalid content detected');
+        throw new AppError('Invalid content detected', 400);
       }
     }
 
@@ -301,17 +291,17 @@ export function validateFileUpload(): (req: Request, _res: Response, next: NextF
 
       // Check file type
       if (!allowedMimeTypes.includes(fileToCheck.mimetype)) {
-        throw new ValidationError(`File type ${fileToCheck.mimetype} not allowed`);
+        throw new AppError(`File type ${fileToCheck.mimetype} not allowed`, 400);
       }
 
       // Check file size
       if (fileToCheck.size > maxFileSize) {
-        throw new ValidationError(`File size exceeds maximum allowed size of ${maxFileSize} bytes`);
+        throw new AppError(`File size exceeds maximum allowed size of ${maxFileSize} bytes`, 400);
       }
 
       // Check for malicious file names
       if (/[<>:"/\\|?*]/.test(fileToCheck.originalname)) {
-        throw new ValidationError('Invalid characters in filename');
+        throw new AppError('Invalid characters in filename', 400);
       }
     }
 

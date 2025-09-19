@@ -7,7 +7,7 @@ import type { Request, Response, NextFunction } from 'express';
 import type { Pool } from 'mysql2/promise';
 
 import { CacheManager } from '../services/cache/CacheManager';
-import { enhancedLogger } from '../utils/enhancedLogger';
+import { logger } from '../utils/logger';
 import { getRedisClient } from '../utils/redisClient';
 
 export type ServiceLifetime = 'singleton' | 'transient' | 'scoped';
@@ -218,7 +218,7 @@ export class DependencyContainer {
 
     // Register logger
     this.registerSingleton('logger', () => {
-      return enhancedLogger;
+      return logger;
     });
 
     // Register configuration
@@ -275,8 +275,8 @@ export class ServiceFactory {
     container.registerSingleton(
       'auditService',
       (...args: unknown[]) => {
-        const [database, logger] = args as [Pool, typeof enhancedLogger];
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const [database, logger] = args as [Pool, typeof logger];
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
         const { AuditService } = require('../services/AuditService');
         return new AuditService(database, logger);
       },
@@ -286,8 +286,8 @@ export class ServiceFactory {
     container.registerSingleton(
       'encryptionService',
       (...args: unknown[]) => {
-        const [config, logger] = args as [ServiceConfiguration, typeof enhancedLogger];
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const [config, logger] = args as [ServiceConfiguration, typeof logger];
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
         const { EncryptionService } = require('../services/EncryptionService');
         return new EncryptionService(config.security.encryptionKey, logger);
       },
@@ -297,8 +297,8 @@ export class ServiceFactory {
     container.registerSingleton(
       'blockchainService',
       (...args: unknown[]) => {
-        const [config, logger] = args as [ServiceConfiguration, typeof enhancedLogger];
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const [config, logger] = args as [ServiceConfiguration, typeof logger];
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
         const { BlockchainService } = require('../services/BlockchainService');
         return new BlockchainService(config.blockchain, logger);
       },
@@ -308,8 +308,8 @@ export class ServiceFactory {
     container.registerSingleton(
       'ipfsService',
       (...args: unknown[]) => {
-        const [config, logger] = args as [ServiceConfiguration, typeof enhancedLogger];
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const [config, logger] = args as [ServiceConfiguration, typeof logger];
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
         const { IPFSService } = require('../services/IPFSService');
         return new IPFSService(config.ipfs, logger);
       },
@@ -319,8 +319,8 @@ export class ServiceFactory {
     container.registerScoped(
       'userService',
       (...args: unknown[]) => {
-        const [database, auditService, cache, logger] = args as [Pool, unknown, unknown, typeof enhancedLogger];
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const [database, auditService, cache, logger] = args as [Pool, unknown, unknown, typeof logger];
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
         const { UserService } = require('../services/UserService');
         return new UserService({
           database,
@@ -336,8 +336,8 @@ export class ServiceFactory {
       'medicalRecordService',
       (...args: unknown[]) => {
         const [database, blockchainService, ipfsService, encryptionService, auditService, logger] =
-          args as [Pool, unknown, unknown, unknown, unknown, typeof enhancedLogger];
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+          args as [Pool, unknown, unknown, unknown, unknown, typeof logger];
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
         const { MedicalRecordService } = require('../services/MedicalRecordService');
         return new MedicalRecordService({
           database,

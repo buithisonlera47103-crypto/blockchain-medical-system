@@ -2,10 +2,9 @@ import express, { Response, NextFunction } from 'express';
 
 import abacEnforce from '../middleware/abac';
 import { asyncHandler } from '../middleware/asyncHandler';
-import { AuthenticatedRequest } from '../middleware/auth';
-import { authenticateToken } from '../middleware/authMiddleware';
+import { AuthenticatedRequest, authenticateToken } from '../middleware/auth';
 import { EncryptedSearchService } from '../services/EncryptedSearchService';
-import { enhancedLogger as logger } from '../utils/enhancedLogger';
+import { logger } from '../utils/logger';
 
 const router = express.Router();
 const service = new EncryptedSearchService(logger);

@@ -16,7 +16,7 @@
 import { Pool, RowDataPacket } from 'mysql2/promise';
 
 import { pool } from '../config/database-mysql';
-import { BusinessLogicError } from '../utils/EnhancedAppError';
+import { AppError } from '../utils/AppError';
 import { logger } from '../utils/logger';
 
 // 策略规则接口
@@ -111,7 +111,7 @@ export class AccessControlPolicyEngine {
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('策略引擎初始化失败', { error: errorMessage });
-      throw new BusinessLogicError(`策略引擎初始化失败: ${errorMessage}`);
+      throw new AppError(`策略引擎初始化失败: ${errorMessage}`, 500);
     }
   }
 
@@ -566,7 +566,7 @@ export class AccessControlPolicyEngine {
           [userId, userId, resourceId, action]
         );
 
-        return Number((rows[0] as RowDataPacket)['count'] ?? 0) > 0;
+        return Number((rows[0])['count'] ?? 0) > 0;
       } finally {
         connection.release();
       }
@@ -626,7 +626,7 @@ export class AccessControlPolicyEngine {
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('添加策略规则失败', { error: errorMessage });
-      throw new BusinessLogicError(`添加策略规则失败: ${errorMessage}`);
+      throw new AppError(`添加策略规则失败: ${errorMessage}`, 500);
     }
   }
 
@@ -650,7 +650,7 @@ export class AccessControlPolicyEngine {
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('删除策略规则失败', { error: errorMessage });
-      throw new BusinessLogicError(`删除策略规则失败: ${errorMessage}`);
+      throw new AppError(`删除策略规则失败: ${errorMessage}`, 500);
     }
   }
 
@@ -671,7 +671,7 @@ export class AccessControlPolicyEngine {
     try {
       const existingPolicy = this.policies.get(policyId);
       if (!existingPolicy) {
-        throw new BusinessLogicError('策略规则不存在');
+        throw new AppError('策略规则不存在', 404);
       }
 
       const updatedPolicy: PolicyRule = {
@@ -713,7 +713,7 @@ export class AccessControlPolicyEngine {
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('更新策略规则失败', { error: errorMessage });
-      throw new BusinessLogicError(`更新策略规则失败: ${errorMessage}`);
+      throw new AppError(`更新策略规则失败: ${errorMessage}`, 500);
     }
   }
 
@@ -729,7 +729,7 @@ export class AccessControlPolicyEngine {
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('重新加载策略规则失败', { error: errorMessage });
-      throw new BusinessLogicError(`重新加载策略规则失败: ${errorMessage}`);
+      throw new AppError(`重新加载策略规则失败: ${errorMessage}`, 500);
     }
   }
 }

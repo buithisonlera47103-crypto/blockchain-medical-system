@@ -12,7 +12,6 @@ import { AuditService } from './AuditService';
 import { BlockchainService } from './BlockchainService';
 import { CacheManager } from './cache/CacheManager';
 import { CryptographyService } from './CryptographyService';
-import { CryptographyServiceExtension } from './CryptographyServiceExtension';
 import { IPFSService } from './IPFSService';
 import { KeyManagementService } from './KeyManagementService';
 import { MedicalRecordService } from './MedicalRecordService';
@@ -197,7 +196,7 @@ export function createServiceContainer(pool?: Pool): ServiceContainer {
   });
 
   container.register('cryptographyServiceExtension', async () => {
-    return CryptographyServiceExtension.getInstance() as ServiceInstance;
+    return CryptographyService.getInstance() as ServiceInstance;
   });
 
   container.register('keyManagementService', () => {

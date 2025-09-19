@@ -17,7 +17,7 @@
 
 | 文件名称 | 内容描述 |
 |---------|---------|
-| `qidong.md` | 详细启动和监控指南 |
+| `backend-app/docs/BACKEND_STARTUP_GUIDE.md` | 后端启动与运维权威指南 |
 | `README_SCRIPTS.md` | 脚本使用说明 |
 
 ## 🎯 快速开始

@@ -7,7 +7,7 @@
 import { Pool, RowDataPacket } from 'mysql2/promise';
 
 import { pool as _pool } from '../config/database';
-import { DatabaseError } from '../utils/EnhancedAppError';
+import { AppError } from '../utils/AppError';
 import { logger } from '../utils/logger';
 import { getRedisClient } from '../utils/redisClient';
 
@@ -282,7 +282,7 @@ export class OptimizedQueryService {
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('Failed to fetch medical records', { error: errorMessage });
-      throw new DatabaseError(`Failed to fetch medical records: ${errorMessage}`);
+      throw new AppError(`Failed to fetch medical records: ${errorMessage}`, 500);
     }
   }
 
@@ -359,7 +359,7 @@ export class OptimizedQueryService {
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('Failed to fetch user permissions', { error: errorMessage, userId });
-      throw new DatabaseError(`Failed to fetch user permissions: ${errorMessage}`);
+      throw new AppError(`Failed to fetch user permissions: ${errorMessage}`, 500);
     }
   }
 
@@ -475,7 +475,7 @@ export class OptimizedQueryService {
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('Failed to fetch audit logs', { error: errorMessage });
-      throw new DatabaseError(`Failed to fetch audit logs: ${errorMessage}`);
+      throw new AppError(`Failed to fetch audit logs: ${errorMessage}`, 500);
     }
   }
 
@@ -598,7 +598,7 @@ export class OptimizedQueryService {
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('Failed to execute search', { error: errorMessage, keyword });
-      throw new DatabaseError(`Failed to execute search: ${errorMessage}`);
+      throw new AppError(`Failed to execute search: ${errorMessage}`, 500);
     }
   }
 

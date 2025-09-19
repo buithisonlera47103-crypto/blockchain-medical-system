@@ -17,8 +17,8 @@ import {
   LoginRequest,
   LoginResponse
 } from '../types/User';
-import { NotFoundError, ValidationError, BusinessLogicError } from '../utils/EnhancedAppError';
-import { enhancedLogger as logger } from '../utils/enhancedLogger';
+import { AppError } from '../utils/AppError';
+import { logger } from '../utils/logger';
 
 // 临时接口定义
 interface EmailService {
@@ -132,7 +132,7 @@ export class UserService {
       // 获取完整用户信息
       const user = await this.getUserById(userId);
       if (!user) {
-        throw new BusinessLogicError('Failed to retrieve created user');
+        throw new AppError('Failed to retrieve created user', 500);
       }
 
       logger.info('User created successfully', { userId, email: userData.email });
@@ -154,22 +154,22 @@ export class UserService {
       // 查找用户
       const user = await this.getUserByEmail(loginData.email);
       if (!user) {
-        throw new NotFoundError('User not found');
+        throw new AppError('User not found', 404);
       }
 
       // 验证密码
       if (!user.password_hash) {
-        throw new ValidationError('Invalid credentials');
+        throw new AppError('Invalid credentials', 401);
       }
 
       const isValidPassword = await bcrypt.compare(loginData.password, user.password_hash);
       if (!isValidPassword) {
-        throw new ValidationError('Invalid credentials');
+        throw new AppError('Invalid credentials', 401);
       }
 
       // 检查用户状态
       if (user.status !== 'active') {
-        throw new ValidationError('Account is not active');
+        throw new AppError('Account is not active', 401);
       }
 
       // 生成令牌
@@ -228,7 +228,7 @@ export class UserService {
       return this.mapRowToUser(row);
     } catch (error) {
       logger.error('Failed to get user by ID', { error, userId });
-      throw new BusinessLogicError('Failed to retrieve user');
+      throw new AppError('Failed to retrieve user', 500);
     }
   }
 
@@ -254,7 +254,7 @@ export class UserService {
       return this.mapRowToUser(row);
     } catch (error) {
       logger.error('Failed to get user by email', { error, email });
-      throw new BusinessLogicError('Failed to retrieve user');
+      throw new AppError('Failed to retrieve user', 500);
     }
   }
 
@@ -268,7 +268,7 @@ export class UserService {
     );
 
     if (emailRows.length > 0) {
-      throw new ValidationError('Email already exists');
+      throw new AppError('Email already exists', 400);
     }
 
     const [usernameRows] = await this.db.execute<RowDataPacket[]>(
@@ -277,7 +277,7 @@ export class UserService {
     );
 
     if (usernameRows.length > 0) {
-      throw new ValidationError('Username already exists');
+      throw new AppError('Username already exists', 400);
     }
   }
 
@@ -286,23 +286,23 @@ export class UserService {
    */
   private validatePasswordStrength(password: string): void {
     if (password.length < 8) {
-      throw new ValidationError('Password must be at least 8 characters long');
+      throw new AppError('Password must be at least 8 characters long', 400);
     }
 
     if (!/(?=.*[a-z])/.test(password)) {
-      throw new ValidationError('Password must contain at least one lowercase letter');
+      throw new AppError('Password must contain at least one lowercase letter', 400);
     }
 
     if (!/(?=.*[A-Z])/.test(password)) {
-      throw new ValidationError('Password must contain at least one uppercase letter');
+      throw new AppError('Password must contain at least one uppercase letter', 400);
     }
 
     if (!/(?=.*\d)/.test(password)) {
-      throw new ValidationError('Password must contain at least one number');
+      throw new AppError('Password must contain at least one number', 400);
     }
 
     if (!/(?=.*[@$!%*?&])/.test(password)) {
-      throw new ValidationError('Password must contain at least one special character');
+      throw new AppError('Password must contain at least one special character', 400);
     }
   }
 

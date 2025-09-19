@@ -569,7 +569,7 @@ export class RecoveryService {
       );
       connection.release();
 
-      return rows.length > 0 ? (rows[0] as RowDataPacket).file_hash as string : null;
+      return rows.length > 0 ? (rows[0]).file_hash as string : null;
     } catch (error) {
       logger.error(`获取备份哈希值失败: ${error}`);
       return null;
@@ -658,7 +658,7 @@ export class RecoveryService {
       );
       connection.release();
 
-      return rows.length > 0 ? (rows[0] as RowDataPacket).merkle_root as string : null;
+      return rows.length > 0 ? (rows[0]).merkle_root as string : null;
     } catch (error) {
       logger.error(`获取备份Merkle根失败: ${error}`);
       return null;

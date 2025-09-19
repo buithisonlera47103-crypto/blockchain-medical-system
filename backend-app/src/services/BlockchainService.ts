@@ -3,12 +3,12 @@
  * 集成Fabric网络连接、诊断和修复功能
  */
 
-import { readFileSync } from 'fs';
-
-import { Gateway, Network, Wallet, Wallets, Contract, ContractListener } from 'fabric-network';
+import { readFileSync, existsSync, readdirSync } from 'fs';
+import path from 'path';
+import { Gateway, Network, Wallet, Wallets, Contract, ContractListener, X509Identity } from 'fabric-network';
 
 import { FabricConnectionDiagnostics } from '../diagnostics/fabricConnectionFix';
-import { enhancedLogger } from '../utils/enhancedLogger';
+import { logger } from '../utils/logger';
 import { getRedisClient } from '../utils/redisClient';
 
 import { CacheManager } from './cache/CacheManager';
@@ -54,14 +54,14 @@ export class BlockchainService {
   private readonly retryDelay: number = 5000;
   private contractListenerRegistered: boolean = false;
   private readonly config: BlockchainConfig;
-  private readonly logger: typeof enhancedLogger;
+  private readonly logger: typeof logger;
   private readonly cacheManager: CacheManager;
   private readonly diagnosticsService: FabricDiagnosticsService;
   private readonly optimizationService: FabricOptimizationService;
   private readonly lightMode: boolean = (process.env.LIGHT_MODE ?? 'false').toLowerCase() === 'true';
 
-  constructor(logger?: typeof enhancedLogger) {
-    this.logger = logger ?? enhancedLogger;
+  constructor(loggerInstance?: typeof logger) {
+    this.logger = loggerInstance ?? logger;
 
     this.cacheManager = new CacheManager(getRedisClient());
     this.diagnosticsService = new FabricDiagnosticsService(this.logger);
@@ -114,11 +114,54 @@ export class BlockchainService {
     }
   }
 
+  /**
+   * 从本地 MSP 证书自动导入 admin 身份到钱包（无 CA 场景）
+   */
+  private async ensureAdminIdentityFromMsp(): Promise<void> {
+    if (!this.wallet) return;
+    try {
+      const adminId = this.config.userId || 'admin';
+      const customCred = process.env.FABRIC_ADMIN_CRED_PATH;
+      const defaultCred = '../fabric/organizations/peerOrganizations/org1.example.com/users/Admin@org1.example.com/msp';
+      const credPath = customCred && customCred.trim().length > 0 ? customCred : defaultCred;
+      const base = credPath.startsWith('/') ? credPath : path.resolve(process.cwd(), credPath);
+      const certPath = path.join(base, 'signcerts', 'cert.pem');
+      const keyDir = path.join(base, 'keystore');
+
+      if (!existsSync(certPath) || !existsSync(keyDir)) {
+        this.logger.info('未找到可用的MSP证书路径，跳过自动导入', { certPath, keyDir });
+        return;
+      }
+
+      const files = readdirSync(keyDir).filter(f => !f.startsWith('.'));
+      if (files.length === 0) {
+        this.logger.info('keystore目录中未找到私钥文件');
+        return;
+      }
+
+      const certificate = readFileSync(certPath, 'utf8');
+      const privateKey = readFileSync(path.join(keyDir, files[0]), 'utf8');
+
+      const identity: X509Identity = {
+        credentials: { certificate, privateKey },
+        mspId: this.config.mspId || 'Org1MSP',
+        type: 'X.509',
+      };
+
+      await this.wallet.put(adminId, identity);
+      this.logger.info('已从MSP导入管理身份到钱包', { adminId, mspId: identity.mspId });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      this.logger.info('从MSP导入管理身份失败（可忽略）', { error: message });
+    }
+  }
+
+
 
   /**
    * 获取单例实例
    */
-  public static getInstance(logger?: typeof enhancedLogger): BlockchainService {
+  public static getInstance(_loggerInstance?: typeof logger): BlockchainService {
     if (!BlockchainService.instance) {
       BlockchainService.instance = new BlockchainService(logger);
     }
@@ -225,10 +268,14 @@ export class BlockchainService {
       // 创建钱包
       this.wallet = await Wallets.newFileSystemWallet(this.config.walletPath);
 
-      // 检查用户身份
-      const identity = await this.wallet.get(this.config.userId);
+      // 检查用户身份，不存在则尝试从 MSP 证书自动导入
+      let identity = await this.wallet.get(this.config.userId);
       if (!identity) {
-        throw new Error(`用户身份 ${this.config.userId} 在钱包中不存在`);
+        await this.ensureAdminIdentityFromMsp();
+        identity = await this.wallet.get(this.config.userId);
+        if (!identity) {
+          throw new Error(`用户身份 ${this.config.userId} 在钱包中不存在，且无法从MSP导入`);
+        }
       }
 
       // 读取连接配置
@@ -238,14 +285,27 @@ export class BlockchainService {
       this.gateway = new Gateway();
 
       const isProduction = process.env.NODE_ENV === 'production';
+      // 启用 Discovery 以支持多 peer endorsement
+      const discoveryEnabled = true;
 
       const connectionOptions = {
         wallet: this.wallet,
         identity: this.config.userId,
-        discovery: { enabled: true, asLocalhost: !isProduction },
+        discovery: {
+          enabled: discoveryEnabled,
+          asLocalhost: !isProduction
+        },
         eventHandlerOptions: {
           commitTimeout: this.config.networkTimeout,
-          strategy: null,
+          strategy: null, // 不等待提交事件，避免事件服务/发现依赖
+        },
+        // 完全禁用事件服务以避免 "No targets provided" 错误
+        eventSourceOptions: {
+          enabled: false,
+        },
+        // 禁用区块事件监听以避免 BlockEventSource 错误
+        blockEventSourceOptions: {
+          enabled: false,
         },
       };
 
@@ -286,6 +346,12 @@ export class BlockchainService {
     onEvent: (event: { name: string; payload: unknown }) => Promise<void> | void
   ): Promise<void> {
     try {
+      // 检查是否禁用事件监听
+      if (process.env.DISABLE_FABRIC_EVENTS === 'true') {
+        this.logger.info('Fabric 事件监听已禁用（DISABLE_FABRIC_EVENTS=true）');
+        return;
+      }
+
       if (!this.isConnected) {
         this.logger.info('事件监听未启动：区块链未连接');
         return;
@@ -346,7 +412,13 @@ export class BlockchainService {
       throw new Error('合约未初始化');
     }
 
-    const contract = this.contract as Contract;
+    // 检查是否跳过链码查询测试
+    if (process.env.SKIP_CHAINCODE_QUERY === 'true') {
+      this.logger.info('跳过链码查询测试（SKIP_CHAINCODE_QUERY=true），连接已建立');
+      return;
+    }
+
+    const contract = this.contract;
 
     // 1) 优先使用环境变量指定的只读函数
     const customFn = process.env.FABRIC_TEST_QUERY?.trim();
@@ -363,12 +435,13 @@ export class BlockchainService {
 
     // 2) 常见只读查询候选（按顺序尝试）
     const candidates = [
+      'GetAllAssets',  // basic 链码的标准函数
+      'ReadAsset',     // basic 链码的标准函数
       'GetContractInfo',
       'org.hyperledger.fabric:GetMetadata',
       'GetAllRecords',
       'ListRecords',
       'QueryAll',
-      'ReadAsset',
       'ReadRecord',
       'GetRecord'
     ];
@@ -521,7 +594,7 @@ export class BlockchainService {
       const resultString = await this.cacheManager.getOrSet<string>(
         cacheKey,
         async () => {
-          const contract = this.contract as Contract;
+          const contract = this.contract;
           const result = await contract.evaluateTransaction(functionName, ...args);
           return result.toString();
         },
@@ -854,11 +927,13 @@ export class BlockchainService {
     expiresAt?: string
   ): Promise<BlockchainResult<unknown>> {
     try {
-      const args = expiresAt
+      const useExpiry = !!expiresAt && expiresAt.trim().length > 0;
+      const fn = useExpiry ? 'GrantAccessWithExpiry' : 'GrantAccess';
+      const args = useExpiry
         ? [recordId, granteeId, action, expiresAt]
         : [recordId, granteeId, action];
 
-      return await this.submitTransaction('GrantAccess', ...args);
+      return await this.submitTransaction(fn, ...args);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error('授权访问失败', { recordId, granteeId, error: message });
@@ -921,13 +996,29 @@ export class BlockchainService {
    * 获取链码合约元信息
    */
   async getContractInfo(): Promise<BlockchainResult<unknown>> {
-    const res = await this.evaluateTransaction('GetContractInfo');
+    // 对于 basic 链码，使用 GetAllAssets 来验证合约功能
+    const res = await this.evaluateTransaction('GetAllAssets');
     if (res.success && res.data) {
       try {
         const parsed = JSON.parse(res.data);
-        return { ...res, data: parsed };
+        return {
+          ...res,
+          data: {
+            chaincodeName: this.config.chaincodeName,
+            channelName: this.config.channelName,
+            assetsCount: Array.isArray(parsed) ? parsed.length : 0,
+            sampleAssets: Array.isArray(parsed) ? parsed.slice(0, 3) : parsed
+          }
+        };
       } catch {
-        return res;
+        return {
+          ...res,
+          data: {
+            chaincodeName: this.config.chaincodeName,
+            channelName: this.config.channelName,
+            rawData: res.data
+          }
+        };
       }
     }
     return res;

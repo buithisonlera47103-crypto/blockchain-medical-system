@@ -9,7 +9,7 @@ import { Gateway, Network, Contract, Wallets } from 'fabric-network';
 import type { RowDataPacket } from 'mysql2/promise';
 import { v4 as uuidv4 } from 'uuid';
 
-import { pool } from '../config/database-minimal';
+import { mysqlPool as pool } from '../config/database-mysql';
 import { AuditLog } from '../types/AuditLog';
 import { logger } from '../utils/logger';
 

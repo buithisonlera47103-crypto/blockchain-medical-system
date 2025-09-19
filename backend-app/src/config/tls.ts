@@ -4,15 +4,16 @@
  * Implements read111.md TLS 1.3 requirements
  */
 
+import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
-import { ValidationError } from '../utils/EnhancedAppError';
+import { AppError } from '../utils/AppError';
 import { logger } from '../utils/logger';
 
-class ConfigurationError extends ValidationError {
+class ConfigurationError extends AppError {
   constructor(code: string, message: string) {
-    super(message, { code });
+    super(message, 500, true, code);
   }
 }
 
@@ -244,8 +245,6 @@ class TLSConfigManager {
       );
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { execSync } = require('child_process');
 
     try {
       // Create certs directory
@@ -283,8 +282,6 @@ class TLSConfigManager {
     }
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { execSync } = require('child_process');
 
       // Get certificate expiration date
       const expiryCmd = `openssl x509 -in ${this.config.cert} -noout -enddate`;

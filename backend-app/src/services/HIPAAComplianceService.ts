@@ -11,9 +11,9 @@
 
 import crypto from 'crypto';
 
-import { pool } from '../config/database-minimal';
-import { BusinessLogicError } from '../utils/EnhancedAppError';
-import { enhancedLogger as logger } from '../utils/enhancedLogger';
+import { mysqlPool as pool } from '../config/database-mysql';
+import { AppError } from '../utils/AppError';
+import { logger } from '../utils/logger';
 
 export interface HIPAAAuditLog {
   id: string;
@@ -125,7 +125,7 @@ export class HIPAAComplianceService {
     } catch (error: unknown) {
       logger.error('HIPAA审计日志记录失败', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new BusinessLogicError(`审计日志记录失败: ${errorMessage}`);
+      throw new AppError(`审计日志记录失败: ${errorMessage}`, 500);
     }
   }
 
@@ -293,7 +293,7 @@ export class HIPAAComplianceService {
     } catch (error: unknown) {
       logger.error('报告HIPAA违规失败', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new BusinessLogicError(`违规报告失败: ${errorMessage}`);
+      throw new AppError(`违规报告失败: ${errorMessage}`, 500);
     }
   }
 
@@ -372,7 +372,7 @@ export class HIPAAComplianceService {
     } catch (error: unknown) {
       logger.error('执行数据保留策略失败', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new BusinessLogicError(`数据保留策略执行失败: ${errorMessage}`);
+      throw new AppError(`数据保留策略执行失败: ${errorMessage}`, 500);
     }
   }
 
@@ -592,7 +592,7 @@ export class HIPAAComplianceService {
     } catch (error: unknown) {
       logger.error('生成HIPAA合规报告失败', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new BusinessLogicError(`合规报告生成失败: ${errorMessage}`);
+      throw new AppError(`合规报告生成失败: ${errorMessage}`, 500);
     }
   }
 

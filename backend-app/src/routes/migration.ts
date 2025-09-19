@@ -2,8 +2,8 @@
  * 数据迁移路由 - 处理数据导入导出功能
  */
 
-import express, { Response } from 'express';
-import multer = require('multer');
+import express, { Response, Request } from 'express';
+import multer, { type FileFilterCallback } from 'multer';
 
 import { asyncHandler } from '../middleware/asyncHandler';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/auth';
@@ -25,7 +25,7 @@ export function createMigrationRoutes(
     limits: {
       fileSize: 50 * 1024 * 1024, // 50MB限制
     },
-    fileFilter: (_req: any, file: any, cb: any) => {
+    fileFilter: (_req: Request, file: Express.Multer.File, cb: FileFilterCallback): void => {
       // 只允许CSV和JSON文件
       const allowedTypes = ['text/csv', 'application/json', 'text/plain'];
       if (

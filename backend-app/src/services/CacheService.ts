@@ -8,14 +8,72 @@
  * 4. 性能监控和优化
  */
 
+import * as fs from 'fs';
+
 import Redis from 'ioredis';
-import NodeCache = require('node-cache');
 
 import { logger, SimpleLogger } from '../utils/logger';
 import { getRedisClient } from '../utils/redisClient';
 import { resourceCleanupManager } from '../utils/ResourceCleanupManager';
 
+
+
 import { CacheManager } from './cache/CacheManager';
+
+// Lightweight TTL cache fallback (used when node-cache is unavailable in prod image)
+interface NodeCacheLike {
+  get<T>(key: string): T | undefined;
+  set<T>(key: string, value: T, ttl?: number): boolean;
+  del(key: string): number;
+  has(key: string): boolean;
+  keys(): string[];
+  flushAll(): void;
+  close?: () => void;
+}
+
+class SimpleTTLCache implements NodeCacheLike {
+  private readonly store = new Map<string, { value: unknown; expireAt?: number }>();
+
+  private isExpired(entry?: { expireAt?: number }): boolean {
+    return Boolean(entry?.expireAt && entry.expireAt <= Date.now());
+  }
+
+  get<T>(key: string): T | undefined {
+    const entry = this.store.get(key);
+    if (!entry) return undefined;
+    if (this.isExpired(entry)) {
+      this.store.delete(key);
+      return undefined;
+    }
+    return entry.value as T;
+  }
+
+  set<T>(key: string, value: T, ttl?: number): boolean {
+    const expireAt = ttl && ttl > 0 ? Date.now() + ttl * 1000 : undefined;
+    this.store.set(key, { value, expireAt });
+    return true;
+  }
+
+  del(key: string): number {
+    const existed = this.store.delete(key);
+    return existed ? 1 : 0;
+  }
+
+  has(key: string): boolean {
+    return this.get(key) !== undefined;
+  }
+
+  keys(): string[] {
+    for (const [k, v] of Array.from(this.store.entries())) {
+      if (this.isExpired(v)) this.store.delete(k);
+    }
+    return Array.from(this.store.keys());
+  }
+
+  flushAll(): void {
+    this.store.clear();
+  }
+}
 
 export interface CacheConfig {
   ttl: number; // Time to live in seconds
@@ -55,7 +113,7 @@ export interface CacheLike {
 }
 
 export class CacheService {
-  private readonly memoryCache: NodeCache;
+  private readonly memoryCache: NodeCacheLike;
   private readonly config: CacheConfig;
   private readonly logger: SimpleLogger;
   private readonly stats: {
@@ -74,12 +132,23 @@ export class CacheService {
     };
     this.config = { ...defaultConfig, ...config };
 
-    this.memoryCache = new NodeCache({
-      stdTTL: this.config.ttl,
-      checkperiod: this.config.checkPeriod,
-      maxKeys: this.config.maxKeys,
-      useClones: this.config.useClones,
-    });
+    // Try to use node-cache; fallback to SimpleTTLCache if unavailable
+    let mem: NodeCacheLike | undefined;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      const NodeCache = require('node-cache');
+      mem = new NodeCache({
+        stdTTL: this.config.ttl,
+        checkperiod: this.config.checkPeriod,
+        maxKeys: this.config.maxKeys,
+        useClones: this.config.useClones,
+      });
+    } catch {
+      // Optional dependency 'node-cache' may be missing in some environments; safe fallback
+      logger.warn('node-cache unavailable, using SimpleTTLCache');
+      mem = new SimpleTTLCache();
+    }
+    this.memoryCache = mem;
 
     this.stats = {
       hits: 0,
@@ -195,13 +264,20 @@ export class CacheService {
   }
 
   /**
-   * 批量获取缓存
+   * 批量获取缓存 - 优化为并行处理
    */
   async mget<T>(keys: string[]): Promise<Map<string, T>> {
     const results = new Map<string, T>();
 
-    for (const key of keys) {
+    // 并行处理所有键，提高性能
+    const promises = keys.map(async (key) => {
       const value = await this.get<T>(key);
+      return { key, value };
+    });
+
+    const resolvedValues = await Promise.all(promises);
+
+    for (const { key, value } of resolvedValues) {
       if (value !== null) {
         results.set(key, value);
       }
@@ -211,20 +287,16 @@ export class CacheService {
   }
 
   /**
-   * 批量设置缓存
+   * 批量设置缓存 - 优化为并行处理
    */
   async mset<T>(entries: Map<string, T>, ttl?: number): Promise<boolean> {
-    let allSuccess = true;
+    // 并行处理所有设置操作，提高性能
+    const promises = Array.from(entries.entries()).map(async ([key, value]) => {
+      return await this.set(key, value, ttl);
+    });
 
-    const entriesArray = Array.from(entries.entries());
-    for (const [key, value] of entriesArray) {
-      const success = await this.set(key, value, ttl);
-      if (!success) {
-        allSuccess = false;
-      }
-    }
-
-    return allSuccess;
+    const results = await Promise.all(promises);
+    return results.every(success => success);
   }
 
   /**
@@ -273,16 +345,17 @@ export class CacheService {
   }
 
   /**
-   * 缓存预热 - 预加载热点数据
+   * 缓存预热 - 预加载热点数据 (优化为并行处理)
    */
   async warmup(preloadData: Map<string, unknown>): Promise<void> {
     this.logger.info('开始缓存预热', { itemCount: preloadData.size });
 
-    const preloadArray = Array.from(preloadData.entries());
-    for (const [key, value] of preloadArray) {
-      await this.set(key, value, 3600); // 1小时TTL
-    }
+    // 并行处理所有预热数据，提高性能
+    const promises = Array.from(preloadData.entries()).map(async ([key, value]) => {
+      return await this.set(key, value, 3600); // 1小时TTL
+    });
 
+    await Promise.all(promises);
     this.logger.info('缓存预热完成');
   }
 
@@ -316,6 +389,19 @@ export class CacheService {
   }
 
   private initializeRedis(): void {
+    const readSecretEnv = (name: string): string | undefined => {
+      const direct = process.env[name];
+      const file = process.env[`${name}_FILE`];
+      if (file) {
+        try {
+          if (fs.existsSync(file)) {
+            const v = fs.readFileSync(file, 'utf8').trim();
+            if (v) return v;
+          }
+        } catch { /* noop: optional secret file not present */ }
+      }
+      return (direct && direct.trim() !== '') ? direct : undefined;
+    };
     try {
       const enabled = this.config.enableRedis === true
         || String(process.env.REDIS_ENABLED).toLowerCase() === 'true'
@@ -331,7 +417,7 @@ export class CacheService {
       } else {
         const host = process.env.REDIS_HOST ?? '127.0.0.1';
         const port = Number(process.env.REDIS_PORT ?? '6379');
-        const password = process.env.REDIS_PASSWORD;
+        const password = readSecretEnv('REDIS_PASSWORD');
         const db = process.env.REDIS_DB ? Number(process.env.REDIS_DB) : undefined;
         this.redisClient = new Redis({ host, port, password, db });
       }
@@ -411,39 +497,42 @@ export class CacheService {
     try {
       // 清空内存缓存并停止定时器
       this.memoryCache.flushAll();
-      if (typeof (this.memoryCache as any).close === 'function') {
-        (this.memoryCache as any).close();
+      const maybeClose = (this.memoryCache as { close?: () => void }).close;
+      if (typeof maybeClose === 'function') {
+        maybeClose();
       }
-    } catch (_) {}
+    } catch (_) { /* noop */ }
 
     try {
       // 清理CacheManager的定时器
-      if (this.cacheManager && typeof (this.cacheManager as any).cleanup === 'function') {
-        await (this.cacheManager as any).cleanup();
+      const maybeCleanup = this.cacheManager && (this.cacheManager as { cleanup?: () => Promise<void> }).cleanup;
+      if (typeof maybeCleanup === 'function') {
+        await maybeCleanup();
       }
-    } catch (_) {}
+    } catch (_) { /* noop */ }
 
     try {
       // 清空 Redis 命名空间
       await this.flushRedis();
-    } catch (_) {}
+    } catch (_) { /* noop */ }
 
     try {
       if (this.redisClient) {
-        if ((this.redisClient as any).status === 'ready') {
+        const status = (this.redisClient as unknown as { status?: string }).status;
+        if (status === 'ready') {
           await this.redisClient.quit();
         } else {
           this.redisClient.disconnect();
         }
       }
-    } catch (_) {}
+    } catch (_) { /* noop */ }
 
     try {
       // 取消注册资源，避免全局清理影响其它测试
       resourceCleanupManager.unregisterResource('redis-cache');
       // 停止ResourceCleanupManager的定时器
       resourceCleanupManager.stopAllTimers();
-    } catch (_) {}
+    } catch (_) { /* noop */ }
   }
 
   /**

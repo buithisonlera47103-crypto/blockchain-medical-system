@@ -31,7 +31,7 @@ export const mockDatabase = {
 };
 
 // 设置Mock环境
-export function setupMockEnvironment() {
+export function setupMockEnvironment(): void {
   // 替换实际服务为Mock版本
   jest.doMock('../services/BlockchainService', () => ({
     BlockchainService: jest.fn().mockImplementation(() => mockBlockchainService)
@@ -51,7 +51,7 @@ export function setupMockEnvironment() {
 }
 
 // 清理Mock环境
-export function cleanupMockEnvironment() {
+export function cleanupMockEnvironment(): void {
   jest.clearAllMocks();
   jest.resetModules();
 }

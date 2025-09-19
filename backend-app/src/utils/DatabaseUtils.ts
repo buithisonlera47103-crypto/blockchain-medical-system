@@ -5,7 +5,7 @@
 
 import { Pool, PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 
-import { ValidationError, DatabaseError } from './EnhancedAppError';
+import { AppError } from './AppError';
 import { logger } from './logger';
 
 
@@ -118,9 +118,9 @@ export class DatabaseUtils {
     }
 
     // All retries failed
-    const finalError = new DatabaseError(
+    const finalError = new AppError(
       `Query failed after ${retries} attempts: ${lastError?.message}`,
-      { subcode: 'QUERY_EXECUTION_FAILED', query: logQuery ? query : 'hidden', params, retries }
+      500
     );
 
     logger.error('Query execution failed', {
@@ -170,9 +170,9 @@ export class DatabaseUtils {
         }
       }
 
-      const dbError = new DatabaseError(
+      const dbError = new AppError(
         `Transaction failed: ${error instanceof Error ? error.message : String(error)}`,
-        { subcode: 'TRANSACTION_FAILED', duration: Date.now() - startTime }
+        500
       );
 
       logger.error('Transaction failed', { error: dbError.message });
@@ -198,7 +198,7 @@ export class DatabaseUtils {
 
     // Validate pagination parameters
     if (page < 1 || limit < 1 || limit > 1000) {
-      throw new ValidationError('Invalid pagination parameters', { code: 'INVALID_PAGINATION' });
+      throw new AppError('Invalid pagination parameters', 400);
     }
 
     const offset = (page - 1) * limit;

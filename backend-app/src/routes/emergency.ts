@@ -222,7 +222,7 @@ router.post(
       };
       const clientInfo = {
         ipAddress: ((req as ClientInfoReq).clientInfo?.ip ?? req.ip) ?? '',
-        userAgent: (req.get('User-Agent') as string) ?? (req as ClientInfoReq).clientInfo?.userAgent ?? '',
+        userAgent: (req.get('User-Agent')) ?? (req as ClientInfoReq).clientInfo?.userAgent ?? '',
       };
 
       const result = await emergencyAccessService.requestEmergencyAccess(emergencyRequest, clientInfo);
@@ -263,7 +263,7 @@ router.post(
   authenticateToken,
   asyncHandler(async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const emergencyId = req.params.emergencyId as string;
+      const emergencyId = req.params.emergencyId;
       const approverId = req.user?.id ?? '';
 
       await emergencyAccessService.approveEmergencyAccess(emergencyId, approverId, { approved: true });
@@ -324,7 +324,7 @@ router.post(
         return;
       }
 
-      const emergencyId = req.params.emergencyId as string;
+      const emergencyId = req.params.emergencyId;
       const { reason } = req.body;
       const reviewerId = req.user?.id ?? '';
 
@@ -397,7 +397,7 @@ router.get(
       const userId = req.user?.id;
 
       const result = await emergencyAccessService.getEmergencyAccessHistory(
-        userId as string,
+        userId,
         {
           status: status as string,
           limit: parseInt(limit as string, 10),
@@ -461,7 +461,7 @@ router.post(
         return;
       }
 
-      const emergencyId = req.params.emergencyId as string;
+      const emergencyId = req.params.emergencyId;
       const { verificationCode } = req.body;
       const userId = req.user?.id;
 

@@ -8,7 +8,7 @@ import { brotliCompressSync, brotliDecompressSync } from 'zlib';
 
 import Redis from 'ioredis';
 
-import logger from '../../utils/enhancedLogger';
+import { logger } from '../../utils/logger';
 import { MetricsService } from '../MetricsService';
 
 export interface CacheOptions {
@@ -45,7 +45,12 @@ export class CacheManager {
 
   private readonly l1 = new Map<string, { v: string; exp: number }>();
   private readonly l1DefaultTtlSec = 30;
-  private readonly l1MaxSize = 500; // Memory-optimized max size
+  private readonly l1MaxSize: number = (((): number => {
+    const light = (process.env.LIGHT_MODE ?? 'false').toLowerCase() === 'true';
+    const envVal = parseInt(process.env.L1_CACHE_MAX_SIZE ?? '0');
+    if (!Number.isNaN(envVal) && envVal > 0) return envVal;
+    return light ? 200 : 500; // smaller cache in light mode
+  })());
   private memoryCleanupInterval: NodeJS.Timeout | null = null;
 
   private l1Get(fullKey: string): string | null {
@@ -97,9 +102,22 @@ export class CacheManager {
   private startMemoryCleanup(): void {
     if (this.memoryCleanupInterval) return;
 
+    // Disable background cleanup during tests to avoid interference with unit tests
+    const env = (process.env.NODE_ENV ?? '').toLowerCase();
+    const disable = (process.env.CACHE_DISABLE_CLEANUP ?? 'false').toLowerCase() === 'true';
+    if (env === 'test' || disable) {
+      return;
+    }
+
+    const light = (process.env.LIGHT_MODE ?? 'false').toLowerCase() === 'true';
+    const intervalMs = light ? 120000 : 60000; // slower in light mode
     this.memoryCleanupInterval = setInterval(() => {
       this.cleanupExpiredEntries();
-    }, 60000); // Clean every minute
+    }, intervalMs);
+    // Do not keep the process alive for this timer
+    if (this.memoryCleanupInterval && typeof this.memoryCleanupInterval.unref === 'function') {
+      this.memoryCleanupInterval.unref();
+    }
   }
 
 

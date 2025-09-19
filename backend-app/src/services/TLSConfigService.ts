@@ -4,7 +4,7 @@
  * Compliant with read111.md security requirements
  */
 
-import { constants } from 'crypto';
+import { constants, X509Certificate, generateKeyPairSync } from 'crypto';
 import * as fs from 'fs';
 import * as https from 'https';
 import type { SecureVersion } from 'tls';
@@ -201,7 +201,7 @@ export class TLSConfigService {
     try {
       const certData = fs.readFileSync(this.config.certificatePath);
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const cert = new (require('crypto').X509Certificate)(certData);
+      const cert = new X509Certificate(certData);
 
       const validFrom = new Date(cert.validFrom);
       const validTo = new Date(cert.validTo);
@@ -238,13 +238,11 @@ export class TLSConfigService {
     validityDays?: number;
   }): Promise<{ cert: string; key: string }> {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { execSync: _execSync } = require('child_process');
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const crypto = require('crypto');
+
+
 
       // Generate private key
-      const { privateKey, publicKey: _publicKey } = crypto.generateKeyPairSync('rsa', {
+      const { privateKey, publicKey: _publicKey } = generateKeyPairSync('rsa', {
         modulusLength: 2048,
         publicKeyEncoding: { type: 'spki', format: 'pem' },
         privateKeyEncoding: { type: 'pkcs8', format: 'pem' },

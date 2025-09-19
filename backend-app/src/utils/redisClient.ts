@@ -1,6 +1,6 @@
 import Redis from 'ioredis';
 
-import { enhancedLogger } from './enhancedLogger';
+import { logger } from './logger';
 
 // Lightweight in-memory Redis fallback (no external container required)
 class InMemoryRedis {
@@ -25,7 +25,7 @@ class InMemoryRedis {
 
   async get(key: string): Promise<string | null> {
     if (this.isExpired(key)) return null;
-    return this.store.has(key) ? (this.store.get(key) as string) : null;
+    return this.store.has(key) ? (this.store.get(key)) : null;
   }
 
   async set(key: string, value: string, mode?: 'EX', seconds?: number, _flag?: 'NX'): Promise<'OK' | null> {
@@ -129,7 +129,7 @@ function createRedis(): Redis {
   // Opt-in in-memory fallback for non-container environments (tests/dev)
   const useMemory = (process.env['ENABLE_FAKE_REDIS'] ?? '').toLowerCase() === 'true';
   if (useMemory) {
-    enhancedLogger.warn('Using in-memory Redis fallback (ENABLE_FAKE_REDIS=true)');
+    logger.warn('Using in-memory Redis fallback (ENABLE_FAKE_REDIS=true)');
     return new InMemoryRedis() as unknown as Redis;
   }
 
@@ -138,11 +138,11 @@ function createRedis(): Redis {
     try {
       return new Redis(url);
     } catch (error) {
-      enhancedLogger.warn('Failed to connect to Redis, using in-memory fallback', { error });
+      logger.warn('Failed to connect to Redis, using in-memory fallback', { error });
       return new InMemoryRedis() as unknown as Redis;
     }
   }
-  enhancedLogger.info('No Redis URL provided, using in-memory fallback');
+  logger.info('No Redis URL provided, using in-memory fallback');
   return new InMemoryRedis() as unknown as Redis;
 }
 
@@ -153,13 +153,13 @@ export function getRedisClient(): Redis {
     // For InMemoryRedis, on() is a no-op
     (redisInstance as unknown as Redis).on?.('error', (err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
-      enhancedLogger.warn('Redis client error', { error: msg });
+      logger.warn('Redis client error', { error: msg });
     });
     (redisInstance as unknown as Redis).on?.('connect', () => {
-      enhancedLogger.info('Redis client connected');
+      logger.info('Redis client connected');
     });
     (redisInstance as unknown as Redis).on?.('close', () => {
-      enhancedLogger.warn('Redis client connection closed');
+      logger.warn('Redis client connection closed');
     });
   }
   return redisInstance;

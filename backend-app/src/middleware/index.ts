@@ -4,7 +4,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 
-import { enhancedLogger as logger } from '../utils/enhancedLogger';
+import { logger } from '../utils/logger';
 
 // Local error response type for middleware responses
 interface BasicErrorResponse {

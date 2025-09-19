@@ -5,8 +5,6 @@
 
 import * as crypto from 'crypto';
 
-import { logger } from '../utils/logger';
-
 // Local IPFS-related types (to decouple from missing shared types)
 export interface EncryptedData {
   encryptedContent: string;
@@ -53,6 +51,9 @@ export interface PinStatus {
   pinDate?: Date;
 }
 
+import { logger } from '../utils/logger';
+import { resourceCleanupManager } from '../utils/ResourceCleanupManager';
+
 import { IPFSClusterService } from './IPFSClusterService';
 
 // Production cluster configuration interface
@@ -96,6 +97,7 @@ export class IPFSService {
   private readonly defaultEncryptionKey: string;
   private readonly cluster?: IPFSClusterService;
   private productionConfig?: IPFSProductionConfig;
+  private healthCheckInterval?: NodeJS.Timeout;
   private availableNodes: Array<{
     host: string;
     port: number;
@@ -177,11 +179,10 @@ export class IPFSService {
   }
   private async loadIPFSCreate(): Promise<((opts: unknown) => unknown) | null> {
     try {
-      // Use dynamic ESM import that won't be downleveled to require by TypeScript
-      const importer = new Function('m', 'return import(m)');
-      const mod: any = await (importer as (m: string) => Promise<unknown>)('ipfs-http-client');
-      const createFn = mod?.create ?? mod?.default;
-      return typeof createFn === 'function' ? createFn : null;
+      // Use native dynamic import
+      const mod: unknown = await import('ipfs-http-client');
+      const createFn = (mod as { create?: unknown; default?: unknown }).create ?? (mod as { default?: unknown }).default;
+      return typeof createFn === 'function' ? (createFn as (opts: unknown) => unknown) : null;
     } catch (e) {
       logger.warn('Failed to ESM-import ipfs-http-client, will fallback to mock', e);
       return null;
@@ -191,32 +192,130 @@ export class IPFSService {
 
   private async initializeIPFS(): Promise<void> {
     try {
-      const createIPFS = await this.loadIPFSCreate();
-      if (!createIPFS) throw new Error('ipfs-http-client ESM import failed');
+      // 使用直接 HTTP API 调用，避免 ipfs-http-client 兼容性问题
+      const ipfsUrl = typeof process.env["IPFS_URL"] === 'string' && process.env["IPFS_URL"].trim() !== ''
+        ? process.env["IPFS_URL"]
+        : 'http://localhost:5001';
 
-      if (this.productionConfig?.enabled) {
-        if (this.productionConfig.loadBalancer) {
-          const { host, port, protocol } = this.productionConfig.loadBalancer;
-          this.ipfs = createIPFS({
-            url: `${protocol}://${host}:${port}`,
-            timeout: 30000,
-            headers: { 'User-Agent': 'medical-record-system/1.0.0' },
-          }) as unknown as IPFSClient;
-          logger.info(`IPFS initialized with load balancer: ${protocol}://${host}:${port}`);
-        } else {
-          await this.initializeWithFailover();
-        }
-      } else {
-        this.ipfs = createIPFS({
-          url: (typeof process.env["IPFS_URL"] === 'string' && process.env["IPFS_URL"].trim() !== '' ? process.env["IPFS_URL"] : 'http://localhost:5001'),
-          timeout: 10000,
-          headers: { 'User-Agent': 'medical-record-system/1.0.0' },
-        }) as unknown as IPFSClient;
-      }
+      // 测试 IPFS 连接
+      await this.testIPFSConnection(ipfsUrl);
+
+      // 创建基于 HTTP API 的客户端
+      this.ipfs = this.createHTTPAPIClient(ipfsUrl);
+      logger.info('IPFS连接成功（HTTP API）', { url: ipfsUrl });
     } catch (error) {
       logger.warn('IPFS连接失败，使用模拟模式:', error);
       this.ipfs = this.createMockIPFS();
     }
+  }
+
+  private async testIPFSConnection(url: string): Promise<void> {
+    const axios = await import('axios');
+    const response = await axios.default.post(`${url}/api/v0/version`, null, {
+      timeout: 5000,
+      headers: { 'User-Agent': 'medical-record-system/1.0.0' }
+    });
+
+    if (response.status !== 200) {
+      throw new Error(`IPFS API 返回状态码: ${response.status}`);
+    }
+  }
+
+  private createHTTPAPIClient(baseUrl: string): IPFSClient {
+    return {
+      add: async (input: unknown): Promise<unknown> => {
+        const axios = await import('axios');
+        const FormData = await import('form-data');
+
+        const form = new FormData.default();
+        if (Buffer.isBuffer(input)) {
+          form.append('file', input, 'file');
+        } else if (typeof input === 'string') {
+          form.append('file', Buffer.from(input), 'file');
+        } else {
+          form.append('file', Buffer.from(JSON.stringify(input)), 'file');
+        }
+
+        const response = await axios.default.post(`${baseUrl}/api/v0/add`, form, {
+          headers: { ...form.getHeaders(), 'User-Agent': 'medical-record-system/1.0.0' },
+          timeout: 30000
+        });
+
+        return { cid: { toString: () => response.data.Hash } };
+      },
+
+      async *cat(cid: string): AsyncIterable<Buffer> {
+        const axios = await import('axios');
+        const response = await axios.default.post(`${baseUrl}/api/v0/cat?arg=${cid}`, null, {
+          responseType: 'arraybuffer',
+          timeout: 30000,
+          headers: { 'User-Agent': 'medical-record-system/1.0.0' }
+        });
+
+        yield Buffer.from(response.data);
+      },
+
+      id: async () => {
+        const axios = await import('axios');
+        const response = await axios.default.post(`${baseUrl}/api/v0/id`, null, {
+          timeout: 10000,
+          headers: { 'User-Agent': 'medical-record-system/1.0.0' }
+        });
+        return response.data;
+      },
+
+      files: {
+        stat: async (path: string) => {
+          const axios = await import('axios');
+          const response = await axios.default.post(`${baseUrl}/api/v0/files/stat?arg=${path}`, null, {
+            timeout: 10000,
+            headers: { 'User-Agent': 'medical-record-system/1.0.0' }
+          });
+          return response.data;
+        }
+      },
+
+      pin: {
+        add: async (cid: string) => {
+          const axios = await import('axios');
+          const response = await axios.default.post(`${baseUrl}/api/v0/pin/add?arg=${cid}`, null, {
+            timeout: 30000,
+            headers: { 'User-Agent': 'medical-record-system/1.0.0' }
+          });
+          return response.data;
+        },
+        rm: async (cid: string) => {
+          const axios = await import('axios');
+          const response = await axios.default.post(`${baseUrl}/api/v0/pin/rm?arg=${cid}`, null, {
+            timeout: 30000,
+            headers: { 'User-Agent': 'medical-record-system/1.0.0' }
+          });
+          return response.data;
+        }
+      },
+
+      repo: {
+        stat: async () => {
+          const axios = await import('axios');
+          const response = await axios.default.post(`${baseUrl}/api/v0/repo/stat`, null, {
+            timeout: 10000,
+            headers: { 'User-Agent': 'medical-record-system/1.0.0' }
+          });
+          return response.data;
+        }
+      },
+
+      object: {
+        stat: async (cid: string) => {
+          const axios = await import('axios');
+          const response = await axios.default.post(`${baseUrl}/api/v0/object/stat?arg=${cid}`, null, {
+            timeout: 10000,
+            headers: { 'User-Agent': 'medical-record-system/1.0.0' }
+          });
+          return response.data;
+        }
+      }
+    };
   }
 
   /**
@@ -287,9 +386,12 @@ export class IPFSService {
           headers: { 'User-Agent': 'medical-record-system/1.0.0' },
         });
 
-        await (testClient as any).id();
+        const maybeId = (testClient as { id?: unknown }).id;
+        if (typeof maybeId === 'function') {
+          await (maybeId as () => Promise<unknown>)();
+        }
 
-        this.ipfs = testClient as unknown as IPFSClient;
+        this.ipfs = testClient as IPFSClient;
         this.currentNodeIndex = this.availableNodes.indexOf(node);
         logger.info(`IPFS initialized with node: ${nodeUrl}`);
         return;
@@ -305,9 +407,15 @@ export class IPFSService {
   private startHealthChecks(): void {
     if (!this.productionConfig?.enabled) return;
 
-    setInterval(() => {
+    const light = (process.env["LIGHT_MODE"] ?? 'false').toLowerCase() === 'true';
+    const baseInterval = this.productionConfig.healthCheckInterval;
+    const intervalMs = light ? Math.max(baseInterval, 300000) : baseInterval; // min 5 min in light mode
+
+    this.healthCheckInterval = setInterval(() => {
       void this.performHealthChecks();
-    }, this.productionConfig.healthCheckInterval);
+    }, intervalMs);
+    // ensure interval is cleared on shutdown to prevent leaks
+    resourceCleanupManager.registerInterval('ipfs-healthchecks', this.healthCheckInterval);
 
     logger.info('IPFS health checks started');
   }
@@ -326,7 +434,10 @@ export class IPFSService {
           timeout: 5000,
         });
 
-        await (testClient as any).id();
+        const maybeId = (testClient as { id?: unknown }).id;
+        if (typeof maybeId === 'function') {
+          await (maybeId as () => Promise<unknown>)();
+        }
 
         if (!node.healthy) {
           node.healthy = true;
@@ -430,11 +541,11 @@ export class IPFSService {
       const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
       logger.info(`Generated file hash: ${fileHash}`);
 
-      // 加密文件内容
-      const encryptedData = this.encryptData(fileBuffer, dataKey);
+      // 加密文件内容（直接使用二进制缓冲，避免base64额外开销）
+      const enc = this.encryptDataToBuffer(fileBuffer, dataKey);
 
-      // 分片处理
-      const chunks = this.chunkFile(encryptedData.encryptedContent);
+      // 分片处理（按加密后的二进制缓冲切片，减少一次内存拷贝）
+      const chunks = this.chunkBuffer(enc.encryptedBuffer);
       logger.info(`Generated ${chunks.length} chunks for file ${fileName}`);
 
       // 上传分片到IPFS（并发）
@@ -463,8 +574,8 @@ export class IPFSService {
         fileSize: fileBuffer.length,
         chunkCount: chunks.length,
         chunkCids,
-        iv: encryptedData.iv,
-        authTag: encryptedData.authTag,
+        iv: enc.iv,
+        authTag: enc.authTag,
         timestamp: new Date().toISOString(),
         mimeType: mimeType ?? 'application/octet-stream',
         originalName: fileName,
@@ -492,7 +603,7 @@ export class IPFSService {
 
       // 固定到本地节点（Pin Service防垃圾回收）
       try {
-        await (this.ipfs as IPFSClient).pin.add(cid);
+        await (this.ipfs).pin.add(cid);
         logger.info(`本地节点固定成功: ${cid}`);
       } catch (error) {
         logger.warn('本地节点固定失败:', (error as Error)?.message);
@@ -587,12 +698,12 @@ export class IPFSService {
         chunkBuffers[idx] = Buffer.concat(chunks);
       });
 
-      // 重组文件
-      const encryptedContent = Buffer.concat(chunkBuffers).toString('base64');
+      // 重组文件（保持二进制缓冲，避免往返 base64 转换）
+      const encryptedBuffer = Buffer.concat(chunkBuffers);
 
       // 解密文件
-      const decryptedData = this.decryptData({
-        encryptedContent,
+      const decryptedData = this.decryptDataFromBuffer({
+        encryptedBuffer,
         iv: metadata.iv,
         authTag: metadata.authTag,
       });
@@ -681,6 +792,50 @@ export class IPFSService {
     }
   }
 
+  // Optimized binary encryption/decryption to avoid base64 overhead
+  private encryptDataToBuffer(data: Buffer, explicitKey?: Buffer): { encryptedBuffer: Buffer; iv: string; authTag: string } {
+    const algorithm = 'aes-256-gcm';
+    const key = (explicitKey && explicitKey.length === 32)
+      ? explicitKey
+      : crypto.scryptSync(this.defaultEncryptionKey, 'salt', 32);
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv(algorithm, key, iv);
+    const encryptedBuffer = Buffer.concat([cipher.update(data), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+    return {
+      encryptedBuffer,
+      iv: iv.toString('hex'),
+      authTag: authTag.toString('hex'),
+    };
+  }
+
+  private decryptDataFromBuffer(params: { encryptedBuffer: Buffer; iv: string; authTag: string }, explicitKey?: Buffer): Buffer {
+    const algorithm = 'aes-256-gcm';
+    const key = (explicitKey && explicitKey.length === 32)
+      ? explicitKey
+      : crypto.scryptSync(this.defaultEncryptionKey, 'salt', 32);
+    const iv = Buffer.from(params.iv, 'hex');
+    const authTag = Buffer.from(params.authTag, 'hex');
+    const decipher = crypto.createDecipheriv(algorithm, key, iv);
+    decipher.setAuthTag(authTag);
+    return Buffer.concat([decipher.update(params.encryptedBuffer), decipher.final()]);
+  }
+
+  private chunkBuffer(buffer: Buffer): FileChunk[] {
+    const chunks: FileChunk[] = [];
+    for (let i = 0; i < buffer.length; i += this.chunkSize) {
+      const chunkData = buffer.subarray(i, i + this.chunkSize);
+      const chunkHash = crypto.createHash('sha256').update(chunkData).digest('hex');
+      chunks.push({
+        index: Math.floor(i / this.chunkSize),
+        data: chunkData,
+        hash: chunkHash,
+      });
+    }
+    return chunks;
+  }
+
+
   /**
    * 文件分片
    * @param data 文件数据
@@ -712,7 +867,7 @@ export class IPFSService {
     let next = 0;
     const workers = new Array(Math.min(limit, items.length)).fill(0).map(async () => {
       for (let idx = next++; idx < items.length; idx = next++) {
-        const item = items[idx] as T;
+        const item = items[idx];
         results[idx] = await mapper(item, idx);
       }
     });
@@ -772,11 +927,11 @@ export class IPFSService {
         chunkBuffers.push(Buffer.concat(chunks));
       }
 
-      const encryptedContent = Buffer.concat(chunkBuffers).toString('base64');
+      const encryptedBuffer = Buffer.concat(chunkBuffers);
 
-      const decryptedData = this.decryptWithKey(
+      const decryptedData = this.decryptDataFromBuffer(
         {
-          encryptedContent,
+          encryptedBuffer,
           iv: metadata.iv,
           authTag: metadata.authTag,
         },
@@ -870,7 +1025,7 @@ export class IPFSService {
       const idResult = await ipfs.id();
       const id = idResult as Record<string, unknown>;
       const addresses = Array.isArray((id as { addresses?: unknown[] }).addresses)
-        ? ((id as { addresses?: unknown[] }).addresses as unknown[]).map(a => String(a))
+        ? ((id as { addresses?: unknown[] }).addresses).map(a => String(a))
         : [];
       const idVal = (id as { id?: unknown }).id;
       const publicKeyVal = (id as { publicKey?: unknown }).publicKey;
@@ -898,7 +1053,7 @@ export class IPFSService {
    */
   async fileExists(cid: string): Promise<boolean> {
     try {
-      await (this.ipfs as IPFSClient).object.stat(cid);
+      await (this.ipfs).object.stat(cid);
       return true;
     } catch (_error) {
       logger.warn('IPFS object.stat failed during fileExists', _error);

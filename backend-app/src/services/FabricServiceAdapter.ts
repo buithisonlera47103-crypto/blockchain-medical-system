@@ -1,5 +1,6 @@
 import { Gateway } from 'fabric-network';
-import { Logger } from 'winston';
+
+import { SimpleLogger } from '../utils/logger';
 
 /**
  * FabricService接口
@@ -18,9 +19,9 @@ export interface FabricService {
  */
 export class FabricServiceAdapter implements FabricService {
   private readonly gateway: Gateway;
-  private readonly logger: Logger;
+  private readonly logger: SimpleLogger;
 
-  constructor(gateway: Gateway, logger: Logger) {
+  constructor(gateway: Gateway, logger: SimpleLogger) {
     this.gateway = gateway;
     this.logger = logger;
   }

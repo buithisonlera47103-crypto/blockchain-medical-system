@@ -507,7 +507,7 @@ export class ChatService {
           'SELECT COUNT(*) as total FROM messages WHERE conversation_id = ?',
           [conversationId]
         );
-        const total = (countRows[0] as RowDataPacket | undefined)?.total ?? 0;
+        const total = (countRows[0])?.total ?? 0;
 
         // 获取消息列表
         const [messageRows] = await connection.execute<RowDataPacket[]>(
@@ -709,7 +709,7 @@ export class ChatService {
           params
         );
 
-        const stats = (statsRows[0] as RowDataPacket | undefined);
+        const stats = (statsRows[0]);
 
         return {
           totalMessages: stats?.total_messages ?? 0,

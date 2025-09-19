@@ -4,13 +4,11 @@
 
 import { Request, Response, NextFunction } from 'express';
 
-import { pool } from '../config/database-minimal';
-
+import { mysqlPool as pool } from '../config/database-mysql';
 import { HealthCheckResult, ServiceStatus } from '../types/common';
 import { logger } from '../utils/logger';
 
-interface IPFSService { isConnected: () => Promise<boolean>; }
-interface BlockchainService { getConnectionStatus: () => Promise<{ isConnected: boolean }>; }
+
 
 // Simple Redis mock
 class Redis {

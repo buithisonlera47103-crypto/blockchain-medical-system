@@ -5,7 +5,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 
-import { BaseAppError } from './EnhancedAppError';
+import { AppError } from './AppError';
 
 export interface ApiResponseMeta {
   timestamp: string;
@@ -105,17 +105,17 @@ export class ApiResponseBuilder {
   }
 
   /**
-   * Creates an error response from BaseAppError
+   * Creates an error response from AppError
    */
-  static error(error: BaseAppError, meta: Partial<ApiResponseMeta> = {}): StandardApiResponse {
+  static error(error: AppError, meta: Partial<ApiResponseMeta> = {}): StandardApiResponse {
     return {
       success: false,
       error: {
-        type: error.category,
-        code: error.code,
+        type: 'AppError',
+        code: error.statusCode.toString(),
         message: error.message,
-        details: error.context as Record<string, unknown> | undefined,
-        retryable: error.recoveryStrategy?.retryable,
+        details: undefined,
+        retryable: false,
       },
       meta: {
         timestamp: new Date().toISOString(),
@@ -336,7 +336,7 @@ export class ApiResponseBuilder {
         this.sendResponse(res, 200, response);
       };
 
-      res.apiError = (error: BaseAppError): void => {
+      res.apiError = (error: AppError): void => {
         const duration = Date.now() - startTime;
         const reqId = (req as unknown as { id?: string }).id;
         const response = this.error(error, {
@@ -398,7 +398,7 @@ declare module 'express-serve-static-core' {
   interface Response {
     apiSuccess(data: unknown, message?: string): void;
     apiSuccessWithPagination(data: unknown[], pagination: PaginationOptions): void;
-    apiError(error: BaseAppError): void;
+    apiError(error: AppError): void;
     apiValidationError(errors: Array<{ field: string; message: string; code: string }>): void;
     apiNotFound(resource: string, identifier?: string): void;
     apiUnauthorized(message?: string): void;

@@ -4,10 +4,37 @@ import abacEnforce from '../middleware/abac';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/auth';
 import { IPFSClusterService } from '../services/IPFSClusterService';
+import { IPFSService } from '../services/IPFSService';
 import { logger } from '../utils/logger';
 
 const router = express.Router();
 const cluster = new IPFSClusterService(logger);
+const ipfsService = new IPFSService();
+
+// IPFS 节点状态检查（无需认证，用于系统监控）
+router.get(
+  '/status',
+  asyncHandler(async (_req, res: Response): Promise<void> => {
+    try {
+      const connected = await ipfsService.checkConnection();
+      const nodeInfo = connected ? await ipfsService.getNodeInfo() : null;
+      const storageStats = connected ? await ipfsService.getStorageStats() : null;
+
+      res.status(200).json({
+        connected,
+        nodeInfo,
+        storageStats,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      res.status(200).json({
+        connected: false,
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      });
+    }
+  })
+);
 
 router.get(
   '/cluster/health',

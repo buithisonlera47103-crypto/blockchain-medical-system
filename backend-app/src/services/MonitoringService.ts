@@ -9,7 +9,7 @@ import nodemailer from 'nodemailer';
 import * as client from 'prom-client';
 import { v4 as uuidv4 } from 'uuid';
 
-import { enhancedLogger } from '../utils/enhancedLogger';
+import { logger } from '../utils/logger';
 import { getRedisClient } from '../utils/redisClient';
 
 import { CacheManager } from './cache/CacheManager';
@@ -137,7 +137,7 @@ export class MonitoringService extends EventEmitter {
   private readonly alertsCache: CacheManager;
   private readonly activeAlerts: Map<string, Alert>;
   private readonly alertRules: Map<string, AlertRule>;
-  private readonly logger: typeof enhancedLogger;
+  private readonly logger: typeof logger;
   private readonly emailTransporter: nodemailer.Transporter;
   private readonly prometheusRegistry: client.Registry;
   private latestApiMetrics: ApiMetrics = { responseTime: 0, errorRate: 0, requestCount: 0 };
@@ -166,7 +166,7 @@ export class MonitoringService extends EventEmitter {
     this.alertRules = new Map();
 
     // 初始化日志
-    this.logger = enhancedLogger;
+    this.logger = logger;
 
     // 初始化邮件传输器
     this.emailTransporter = nodemailer.createTransport({

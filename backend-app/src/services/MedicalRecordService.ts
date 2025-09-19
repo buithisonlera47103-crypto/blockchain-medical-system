@@ -3,7 +3,7 @@ import * as crypto from 'crypto';
 import type { Pool, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 
 import { pool } from '../config/database-mysql';
-import { logger, businessMetrics } from '../utils/enhancedLogger';
+import { logger } from '../utils/logger';
 
 import { BlockchainService } from './BlockchainService';
 import { IPFSService } from './IPFSService';
@@ -169,8 +169,8 @@ export class MedicalRecordService {
     await this.indexRecordToSearch(request, recordId, creatorId, fileType, contentHash, cid, txId);
 
     // Log business metrics
-    const duration = Date.now() - startTime;
-    businessMetrics.recordOperation('create', recordId, creatorId, duration);
+    const _duration = Date.now() - startTime;
+    // businessMetrics.recordOperation('create', recordId, creatorId, duration);
 
     return {
       recordId,
@@ -431,7 +431,7 @@ export class MedicalRecordService {
   }
 
   // Additional methods required by tests
-  async updateRecord(recordId: string, updateData: any): Promise<any> {
+  async updateRecord(recordId: string, updateData: Record<string, unknown>): Promise<Record<string, unknown>> {
     const [result] = await this.db.execute<ResultSetHeader>(
       'UPDATE MEDICAL_RECORDS SET updated_at = CURRENT_TIMESTAMP WHERE record_id = ?',
       [recordId]
@@ -453,7 +453,7 @@ export class MedicalRecordService {
     return result.affectedRows > 0;
   }
 
-  async listRecords(options: any = {}): Promise<any> {
+  async listRecords(options: { page?: number; limit?: number } = {}): Promise<{ records: RowDataPacket[]; total: number; page: number; limit: number }> {
     const { page = 1, limit = 10 } = options;
     const offset = (page - 1) * limit;
 
@@ -474,7 +474,7 @@ export class MedicalRecordService {
     };
   }
 
-  async searchRecords(query: any): Promise<any> {
+  async searchRecords(query: { q?: string }): Promise<{ records: RowDataPacket[]; total: number; query: string }> {
     const searchTerm = query.q || '';
     const [rows] = await this.db.execute<RowDataPacket[]>(
       'SELECT * FROM MEDICAL_RECORDS WHERE file_name LIKE ? OR patient_id LIKE ?',
@@ -488,7 +488,7 @@ export class MedicalRecordService {
     };
   }
 
-  async shareRecord(recordId: string, shareData: any): Promise<any> {
+  async shareRecord(recordId: string, shareData: { targetUserId: string; permissions?: string; duration?: number; grantedBy?: string }): Promise<{ success: true; recordId: string; sharedWith: string }> {
     const { targetUserId, permissions, duration } = shareData;
 
     await this.db.execute<ResultSetHeader>(
@@ -500,7 +500,7 @@ export class MedicalRecordService {
     return { success: true, recordId, sharedWith: targetUserId };
   }
 
-  async getRecordHistory(recordId: string): Promise<any[]> {
+  async getRecordHistory(recordId: string): Promise<Array<{ action: string; timestamp: string | Date; userId: string; details: unknown }>> {
     const [rows] = await this.db.execute<RowDataPacket[]>(
       'SELECT * FROM audit_logs WHERE record_id = ? ORDER BY timestamp DESC',
       [recordId]
@@ -514,7 +514,7 @@ export class MedicalRecordService {
     }));
   }
 
-  async validateRecord(recordId: string): Promise<any> {
+  async validateRecord(recordId: string): Promise<{ isValid: boolean; recordId?: string; validatedAt?: Date; errors: string[] }> {
     const record = await this.getRecord(recordId, 'system');
     if (!record) {
       return { isValid: false, errors: ['Record not found'] };
@@ -530,7 +530,7 @@ export class MedicalRecordService {
     };
   }
 
-  async getRecordMetadata(recordId: string): Promise<any> {
+  async getRecordMetadata(recordId: string): Promise<{ recordId: string; cid: string; fileSize: number; createdAt: Date | string; metadata: RowDataPacket }> {
     const [rows] = await this.db.execute<RowDataPacket[]>(
       'SELECT * FROM ipfs_metadata WHERE record_id = ?',
       [recordId]
@@ -554,7 +554,7 @@ export class MedicalRecordService {
     };
   }
 
-  async getRecordsByPatient(patientId: string, _requesterId: string): Promise<any[]> {
+  async getRecordsByPatient(patientId: string, _requesterId: string): Promise<Array<{ recordId: string; patientId: string; fileName: string; createdAt: Date | string; fileSize: number }>> {
     const [rows] = await this.db.execute<RowDataPacket[]>(
       'SELECT * FROM MEDICAL_RECORDS WHERE patient_id = ? ORDER BY created_at DESC',
       [patientId]
@@ -569,7 +569,7 @@ export class MedicalRecordService {
     }));
   }
 
-  async healthCheck(): Promise<any> {
+  async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; recordCount: number }> {
     try {
       const [rows] = await this.db.execute<RowDataPacket[]>(
         'SELECT COUNT(*) as count FROM MEDICAL_RECORDS'
@@ -577,14 +577,12 @@ export class MedicalRecordService {
 
       return {
         status: 'healthy',
-        recordCount: rows[0]?.count || 0,
-        timestamp: new Date()
+        recordCount: rows[0]?.count || 0
       };
     } catch (error) {
       return {
         status: 'unhealthy',
-        error: error instanceof Error ? error.message : String(error),
-        timestamp: new Date()
+        recordCount: 0
       };
     }
   }

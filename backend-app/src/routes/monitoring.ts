@@ -27,8 +27,16 @@ let monitoringService: MonitoringService;
 const initializeMonitoringService = (): MonitoringService => {
   if (!monitoringService) {
     const config = {
-      metricsInterval: 5000,
-      alertEvaluationInterval: 10000,
+      metricsInterval: (((): number => {
+        const light = (process.env.LIGHT_MODE ?? 'false').toLowerCase() === 'true';
+        const base = parseInt(process.env.METRICS_INTERVAL_MS ?? '120000');
+        return light ? Math.max(base, 300000) : base; // >=5min in light mode
+      })()),
+      alertEvaluationInterval: (((): number => {
+        const light = (process.env.LIGHT_MODE ?? 'false').toLowerCase() === 'true';
+        const base = 60000; // 1min default
+        return light ? Math.max(base, 300000) : base; // >=5min in light mode
+      })()),
       email: {
         host: process.env.SMTP_HOST ?? 'localhost',
         port: Number(process.env.SMTP_PORT ?? 25),
@@ -140,6 +148,11 @@ const monitoringLimiter = rateLimit({
  *       500:
  *         description: 监控失败
  */
+// 轻量健康检查（不要求鉴权），供测试/探活使用
+router.get('/health', (_req: Request, res: Response): void => {
+  res.status(200).json({ success: true, data: { status: 'ok', timestamp: new Date() } });
+});
+
 router.get(
   '/metrics',
   authenticateToken,

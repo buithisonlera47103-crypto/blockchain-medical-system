@@ -4,7 +4,7 @@ import { Pool } from 'mysql2/promise';
 import { v4 as uuidv4 } from 'uuid';
 
 import { pool } from '../config/database-mysql';
-import { enhancedLogger } from '../utils/enhancedLogger';
+import { logger } from '../utils/logger';
 
 import BlockchainService from './BlockchainService';
 import { CryptographyService, EncryptionResult } from './CryptographyService';
@@ -78,11 +78,11 @@ interface SearchStatistics {
 
 export class EncryptedSearchService {
   private readonly db: Pool;
-  private readonly logger: typeof enhancedLogger;
+  private readonly logger: typeof logger;
   private readonly cryptographyService: CryptographyService;
   private readonly searchCache: Map<string, SearchCacheEntry> = new Map();
 
-  constructor(logger: typeof enhancedLogger) {
+  constructor(_loggerInstance: typeof logger) {
     this.db = pool;
     this.logger = logger;
     this.cryptographyService = CryptographyService.getInstance();
@@ -219,19 +219,29 @@ export class EncryptedSearchService {
 
       // Extra defense-in-depth: verify blockchain permission per record to avoid side-channel
       const bc = BlockchainService.getInstance(this.logger);
-      const allowedRecords = await Promise.all(
-        matchingRecords.map(async r => {
-          if (r.patient_id === userId || r.creator_id === userId) return r;
-          const allowed = await bc.checkAccess(r.record_id, userId);
-          return allowed ? r : null;
-        })
-      );
+      const concurrency = Math.max(1, parseInt(process.env.SEARCH_CONCURRENCY ?? '4'));
+      const allowedRecords: Array<SearchResult | null> = [];
+      for (let i = 0; i < matchingRecords.length; i += concurrency) {
+        const batch = matchingRecords.slice(i, i + concurrency);
+        const batchResults = await Promise.all(
+          batch.map(async r => {
+            if (r.patient_id === userId || r.creator_id === userId) return r;
+            const allowed = await bc.checkAccess(r.record_id, userId);
+            return allowed ? r : null;
+          })
+        );
+        allowedRecords.push(...batchResults);
+      }
       const filtered = allowedRecords.filter((x): x is SearchResult => x !== null);
 
-      // Encrypt the record indexes for client with per-record key material
-      const encryptedIndexes = await Promise.all(
-        filtered.map(record => this.encryptRecordIndex(record, userId))
-      );
+      // Encrypt the record indexes with bounded concurrency to avoid CPU spikes
+      const encConc = Math.max(1, parseInt(process.env.SEARCH_ENCRYPT_CONCURRENCY ?? '4'));
+      const encryptedIndexes: EncryptionResult[] = [];
+      for (let i = 0; i < filtered.length; i += encConc) {
+        const batch = filtered.slice(i, i + encConc);
+        const batchEncrypted = await Promise.all(batch.map(record => this.encryptRecordIndex(record, userId)));
+        encryptedIndexes.push(...batchEncrypted);
+      }
 
       this.logger.info('Encrypted index search completed', {
         userId,

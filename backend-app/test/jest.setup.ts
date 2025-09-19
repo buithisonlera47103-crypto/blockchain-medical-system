@@ -26,6 +26,15 @@ process.env["HSM_LIBRARY"] = '/usr/lib/softhsm/libsofthsm2.so';
 process.env["HSM_SLOT"] = '0';
 process.env["HSM_PIN"] = '1234';
 
+// Ensure performance report directory exists for performance tests
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('fs');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require('path');
+  fs.mkdirSync(path.join(process.cwd(), 'test-results', 'performance'), { recursive: true });
+} catch {}
+
 // Mock console methods for cleaner test output
 const originalConsole = { ...console };
 

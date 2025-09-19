@@ -9,8 +9,6 @@ import { Gateway } from 'fabric-network';
 import { Pool } from 'mysql2/promise';
 import Web3 from 'web3';
 import type { AbiItem } from 'web3-utils';
-import { Logger } from 'winston';
-
 
 import {
   BridgeTransferModel,
@@ -18,6 +16,9 @@ import {
   TransferStatus,
   TransferHistory,
 } from '../models/BridgeTransfer';
+import { SimpleLogger } from '../utils/logger';
+
+
 
 import { CacheLike, cacheService as globalCacheService } from './CacheService';
 import { MedicalRecordService } from './MedicalRecordService';
@@ -99,7 +100,7 @@ export class BridgeService {
   private readonly bridgeTransferModel: BridgeTransferModel;
   private readonly medicalRecordService: MedicalRecordService;
   private readonly cache: CacheLike;
-  private readonly logger: Logger;
+  private readonly logger: SimpleLogger;
   private readonly rateLimiter: Map<string, number[]>;
 
   // 配置常量
@@ -122,7 +123,7 @@ export class BridgeService {
     _database: Pool,
     fabricGateway: Gateway,
     medicalRecordService: MedicalRecordService,
-    logger: Logger,
+    logger: SimpleLogger,
     cache?: CacheLike
   ) {
     this.fabricGateway = fabricGateway;

@@ -12,7 +12,7 @@ import { config as dotenvConfig } from 'dotenv';
 import { Gateway, Wallets, Contract } from 'fabric-network';
 
 
-import { enhancedLogger } from '../utils/enhancedLogger';
+import { logger } from '../utils/logger';
 
 // 加载环境变量
 dotenvConfig();
@@ -50,7 +50,7 @@ interface DiagnosticReport {
  * Fabric连接诊断和修复类
  */
 class FabricConnectionDiagnostics {
-  private readonly logger: typeof enhancedLogger;
+  private readonly logger: typeof logger;
   private readonly walletPath: string;
   private readonly connectionProfilePath: string;
   private readonly channelName: string;
@@ -60,8 +60,8 @@ class FabricConnectionDiagnostics {
   private results: DiagnosticResult[] = [];
 
   constructor() {
-    // 初始化日志记录器（统一使用 enhancedLogger）
-    this.logger = enhancedLogger;
+    // 初始化日志记录器（统一使用 logger）
+    this.logger = logger;
 
     // 从环境变量加载配置
     this.walletPath = process.env['FABRIC_WALLET_PATH'] ?? './wallet';
@@ -433,7 +433,7 @@ class FabricConnectionDiagnostics {
         try {
           const res = await contract.evaluateTransaction(fn);
           successName = fn;
-          successResult = res as Buffer;
+          successResult = res;
           break;
         } catch {
           // 尝试下一个

@@ -7,7 +7,7 @@ import rateLimit from 'express-rate-limit';
 
 import { pool } from '../config/database-mysql';
 import { asyncHandler } from '../middleware/asyncHandler';
-import { authenticateToken } from '../middleware/authMiddleware';
+import { authenticateToken } from '../middleware/auth';
 import { ChatService } from '../services/ChatService';
 import { CreateMessageRequest, PaginationParams } from '../types/Chat';
 import { AuthenticatedRequest } from '../types/common';

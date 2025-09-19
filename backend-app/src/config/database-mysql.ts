@@ -29,22 +29,39 @@ export type RowDataPacket = MySQLRowDataPacket;
 export type ResultSetHeader = MySQLResultSetHeader;
 export type QueryResult = [MySQLRowDataPacket[], MySQLFieldPacket[]];
 
-// MySQL connection configuration with performance optimizations
+// Helper to read secret value from *_FILE if present
+function readSecretEnv(varName: string, fallback?: string): string | undefined {
+  const direct = process.env[varName];
+  const fileVar = `${varName}_FILE`;
+  const filePath = process.env[fileVar];
+  if (filePath) {
+    try {
+      const fs = require('fs') as typeof import('fs');
+      if (fs.existsSync(filePath)) {
+        const v = fs.readFileSync(filePath, 'utf8').trim();
+        if (v) return v;
+      }
+    } catch {/* ignore and fallback to env */}
+  }
+  return (direct && direct.trim() !== '') ? direct : fallback;
+}
+
+// MySQL connection configuration with performance optimizations and robust env fallbacks
 const poolConfig: PoolOptions = {
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '3306'),
-  database: process.env.DB_NAME || 'blockchain_db',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  // 性能优化：增加连接池大小
-  connectionLimit: parseInt(process.env.DB_POOL_SIZE || '20'),
+  host: process.env.MYSQL_HOST || process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.MYSQL_PORT || process.env.DB_PORT || '3306', 10),
+  database: process.env.MYSQL_DATABASE || process.env.DB_NAME || 'emr_blockchain',
+  user: process.env.MYSQL_USER || process.env.DB_USER || 'emr_user',
+  password: readSecretEnv('MYSQL_PASSWORD', readSecretEnv('DB_PASSWORD', 'emr_password')),
+  connectionLimit: parseInt(process.env.DB_POOL_SIZE || process.env.DB_POOL_MAX || '10', 10),
   waitForConnections: true,
-  queueLimit: parseInt(process.env.DB_POOL_QUEUE_LIMIT || '0'),
+  queueLimit: parseInt(process.env.DB_POOL_QUEUE_LIMIT || '50', 10),
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
-  connectTimeout: parseInt(process.env.DB_CONNECT_TIMEOUT || '10000'),
-  // 新增性能优化配置  
-  // 字符集和数字支持优化
+  connectTimeout: parseInt(process.env.DB_CONNECT_TIMEOUT || '15000', 10),
+  // Additional performance and safety options
+  namedPlaceholders: true,
+  multipleStatements: false,
   supportBigNumbers: true,
   bigNumberStrings: true,
   charset: 'utf8mb4',
@@ -486,17 +503,24 @@ export async function initializeDatabase(): Promise<void> {
 }
 
 /**
- * Test database connection
+ * Test database connection with retry/backoff
  */
-export async function testConnection(): Promise<boolean> {
-  try {
-    await pool.query('SELECT 1');
-    console.log('MySQL connection test successful');
-    return true;
-  } catch (error) {
-    console.error('MySQL connection test failed:', error);
-    return false;
+export async function testConnection(maxRetries = 30, delayMs = 2000): Promise<boolean> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await pool.query('SELECT 1');
+      console.log('MySQL connection test successful');
+      return true;
+    } catch (error) {
+      console.error(`MySQL connection test failed (attempt ${attempt}/${maxRetries}):`, error instanceof Error ? error.message : String(error));
+      if (attempt < maxRetries) {
+        await new Promise(res => setTimeout(res, delayMs));
+        continue;
+      }
+      return false;
+    }
   }
+  return false;
 }
 
 /**

@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # ===== 后端服务 =====
   backend:
-    build: 
+    build:
       context: ../backend-app
       dockerfile: Dockerfile
     container_name: emr-backend
@@ -11,6 +11,10 @@ services:
       - "3001:3001"
     environment:
       - NODE_ENV=production
+      - NODE_OPTIONS=--max-old-space-size=768
+      # Ensure container logs are visible via stdout/stderr
+      - ENABLE_FILE_LOGS=false
+      - CONSOLE_LOG_LEVEL=info
       # Backend expects MYSQL_* per src/config/database.ts
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -22,7 +26,7 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD_FILE=/run/secrets/redis_password
       # IPFS client URL expected by IPFSService
-      - IPFS_API_URL=http://ipfs:5001
+      - IPFS_URL=http://ipfs:5001
       # Security - Use Docker secrets
       - JWT_SECRET_FILE=/run/secrets/jwt_secret
       - JWT_REFRESH_SECRET_FILE=/run/secrets/jwt_refresh_secret
@@ -62,7 +66,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 120s
 
   # ===== 前端服务 =====
   frontend:
@@ -94,21 +98,24 @@ services:
     ports:
       - "3307:3306"
     environment:
-      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_ROOT_PASSWORD_FILE=/run/secrets/mysql_root_password
       - MYSQL_DATABASE=emr_blockchain
       - MYSQL_USER=emr_user
-      - MYSQL_PASSWORD=userpassword
+      - MYSQL_PASSWORD_FILE=/run/secrets/mysql_password
       - MYSQL_CHARACTER_SET_SERVER=utf8mb4
       - MYSQL_COLLATION_SERVER=utf8mb4_unicode_ci
     volumes:
       - mysql_data:/var/lib/mysql
       - ../backend-app/src/database:/docker-entrypoint-initdb.d:ro
       - ./deployment/mysql/my.cnf:/etc/mysql/conf.d/my.cnf:ro
+    secrets:
+      - mysql_root_password
+      - mysql_password
     networks:
       - emr_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$(cat /run/secrets/mysql_root_password)\""]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -120,15 +127,17 @@ services:
     container_name: emr-redis
     ports:
       - "6380:6379"
-    command: redis-server --appendonly yes --requirepass redis_password
+    command: ["/bin/sh", "-c", "exec redis-server --appendonly yes --requirepass \"$(cat /run/secrets/redis_password)\""]
     volumes:
       - redis_data:/data
       - ./deployment/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    secrets:
+      - redis_password
     networks:
       - emr_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "redis_password", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$(cat /run/secrets/redis_password)\" ping"]
       interval: 30s
       timeout: 10s
       retries: 3

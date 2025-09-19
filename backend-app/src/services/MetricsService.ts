@@ -7,7 +7,7 @@ import * as os from 'os';
 
 import { Request, Response } from 'express';
 
-import { enhancedLogger as logger } from '../utils/enhancedLogger';
+import { logger } from '../utils/logger';
 
 export interface MetricData {
   name: string;
@@ -50,6 +50,8 @@ export interface BusinessMetrics {
 class MetricsCollector {
   private readonly metrics: Map<string, MetricData[]> = new Map();
   private requestTimes: number[] = [];
+  private requestTimestamps: number[] = [];
+
   private requestCount = 0;
   private errorCount = 0;
   private readonly startTime = Date.now();
@@ -60,6 +62,12 @@ class MetricsCollector {
     this.requestTimes.push(duration);
     if (this.requestTimes.length > this.maxRequestTimes) {
       this.requestTimes.shift();
+    }
+    const now = Date.now();
+    this.requestTimestamps.push(now);
+    const cutoff = now - 60_000;
+    while (this.requestTimestamps.length && this.requestTimestamps[0] < cutoff) {
+      this.requestTimestamps.shift();
     }
     this.requestCount++;
   }
@@ -110,9 +118,12 @@ class MetricsCollector {
   }
 
   private getRequestsPerMinute(): number {
-    // const _oneMinuteAgo = Date.now() - 60000;
-    // This is a simplified calculation
-    return this.requestCount;
+    const now = Date.now();
+    const cutoff = now - 60_000;
+    while (this.requestTimestamps.length && this.requestTimestamps[0] < cutoff) {
+      this.requestTimestamps.shift();
+    }
+    return this.requestTimestamps.length;
   }
 
   private getErrorRate(): number {
@@ -282,6 +293,14 @@ export class MetricsService {
     const systemMetrics = this.collector.getSystemMetrics();
     const customMetrics = this.collector.getAllMetrics();
 
+    const labelsToString = (labels?: Record<string, string>): string => {
+      if (!labels) return '';
+      return Object.entries(labels)
+        .sort(([a], [b]) => (a > b ? 1 : a < b ? -1 : 0))
+        .map(([k, v]) => `${k}="${v}"`)
+        .join(',');
+    };
+
     let output = '';
 
     // System metrics
@@ -293,30 +312,75 @@ export class MetricsService {
     output += `# TYPE nodejs_cpu_usage_seconds gauge\n`;
     output += `nodejs_cpu_usage_seconds ${systemMetrics.cpuUsage}\n\n`;
 
-    output += `# HELP http_requests_total Total HTTP requests\n`;
-    output += `# TYPE http_requests_total counter\n`;
+    // Custom metrics (bounded to avoid payload explosion)
+    const maxSeries = Math.max(50, parseInt(process.env.METRICS_MAX_SERIES ?? '200'));
+    let seriesCount = 0;
 
-    output += `# HELP http_request_duration_ms HTTP request duration in milliseconds\n`;
-    output += `# TYPE http_request_duration_ms histogram\n`;
+    for (const [name, metrics] of Object.entries(customMetrics)) {
+      if (seriesCount >= maxSeries) break;
+      if (!metrics || metrics.length === 0) continue;
 
-    // Custom metrics
-    Object.entries(customMetrics).forEach(([name, metrics]) => {
-      const latestMetric = metrics[metrics.length - 1];
-      if (latestMetric) {
-        output += `# HELP ${name} Custom metric\n`;
-        output += `# TYPE ${name} ${latestMetric.type}\n`;
+      const type = metrics[metrics.length - 1]?.type ?? 'gauge';
+      output += `# HELP ${name} Custom metric\n`;
 
-        if (latestMetric.labels) {
-          const labelStr = Object.entries(latestMetric.labels)
-            .map(([k, v]) => `${k}="${v}"`)
-            .join(',');
-          output += `${name}{${labelStr}} ${latestMetric.value}\n`;
-        } else {
-          output += `${name} ${latestMetric.value}\n`;
+      if (type === 'histogram') {
+        output += `# TYPE ${name} histogram\n`;
+        // Default buckets in ms (fine for HTTP/file/db durations)
+        const buckets = (process.env.METRICS_BUCKETS ?? '5,10,25,50,100,250,500,1000,2500,5000')
+          .split(',')
+          .map(x => parseFloat(x))
+          .filter(x => !Number.isNaN(x))
+          .sort((a, b) => a - b);
+
+        // Group by labels to avoid mixing different series
+        const groups = new Map<string, { labels?: Record<string, string>; values: number[] }>();
+        for (const m of metrics) {
+          if (m.type !== 'histogram') continue;
+          const key = labelsToString(m.labels);
+          const g = groups.get(key) ?? { labels: m.labels, values: [] };
+          g.values.push(m.value);
+          groups.set(key, g);
+        }
+
+        for (const [, g] of groups) {
+          const labelStr = labelsToString(g.labels);
+          let count = 0;
+          let sum = 0;
+          const counts: Array<{ le: string; c: number }> = [];
+          for (const b of buckets) {
+            const cAtB = g.values.filter(v => v <= b).length;
+            counts.push({ le: String(b), c: cAtB });
+          }
+          count = g.values.length;
+          sum = g.values.reduce((a, v) => a + v, 0);
+
+          for (const { le, c } of counts) {
+            output += `${name}_bucket{${labelStr ? `${labelStr  },` : ''}le="${le}"} ${c}\n`;
+          }
+          // +Inf bucket is total count
+          output += `${name}_bucket{${labelStr ? `${labelStr  },` : ''}le="+Inf"} ${count}\n`;
+          // sum and count
+          output += `${name}_sum${labelStr ? `{${labelStr}}` : ''} ${sum}\n`;
+          output += `${name}_count${labelStr ? `{${labelStr}}` : ''} ${count}\n`;
+        }
+        output += '\n';
+      } else {
+        output += `# TYPE ${name} ${type}\n`;
+        // For counter/gauge/summary, expose latest sample per label set
+        const latestPerLabel = new Map<string, { labels?: Record<string, string>; value: number }>();
+        for (const m of metrics) {
+          const key = `${type  }|${  labelsToString(m.labels)}`;
+          latestPerLabel.set(key, { labels: m.labels, value: m.value });
+        }
+        for (const [, v] of latestPerLabel) {
+          const ls = labelsToString(v.labels);
+          output += `${name}${ls ? `{${ls}}` : ''} ${v.value}\n`;
         }
         output += '\n';
       }
-    });
+
+      seriesCount++;
+    }
 
     return output;
   }
@@ -464,7 +528,7 @@ export class MetricsService {
 
     // Collect metrics at configurable interval; significantly slow down in LIGHT_MODE and increase base interval
     const light = (process.env.LIGHT_MODE ?? 'false').toLowerCase() === 'true';
-    const baseInterval = parseInt(process.env.METRICS_INTERVAL_MS ?? '120000'); // 默认2分钟而不是30秒
+    const baseInterval = parseInt(process.env.METRICS_INTERVAL_MS ?? '120000'); // 默认2分钟
     const intervalMs = light ? Math.max(baseInterval, 300000) : baseInterval; // 轻量模式最少5分钟
     this.periodicCollectionInterval = setInterval(() => {
       this.collectBusinessMetrics().catch(error => {

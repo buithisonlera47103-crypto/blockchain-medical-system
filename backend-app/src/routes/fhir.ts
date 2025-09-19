@@ -239,7 +239,7 @@ router.get(
   authenticateToken,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const patientId = req.params.id as string;
+      const patientId = req.params.id;
       const fhirPatient = await fhirService.convertPatientToFHIR(patientId);
 
       if (!fhirPatient) {
@@ -353,7 +353,7 @@ router.get(
   authenticateToken,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const reportId = req.params.id as string;
+      const reportId = req.params.id;
       const fhirReport = await fhirService.convertRecordToFHIR(reportId);
 
       if (!fhirReport) {
@@ -410,7 +410,7 @@ router.get(
   authenticateToken,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const observationId = req.params.id as string;
+      const observationId = req.params.id;
       const fhirObservation = await fhirService.convertObservationToFHIR(observationId);
 
       if (!fhirObservation) {
@@ -615,8 +615,9 @@ router.post(
 
     // PKCE verification
     const pkce = verifyPkce(data, code_verifier);
-    if (!pkce.ok) {
-      res.status(pkce.status).json({ error: 'invalid_grant', error_description: pkce.message });
+    if (pkce.ok === false) {
+      const failure = pkce as { ok: false; status: number; message: string };
+      res.status(failure.status).json({ error: 'invalid_grant', error_description: failure.message });
       return;
     }
 

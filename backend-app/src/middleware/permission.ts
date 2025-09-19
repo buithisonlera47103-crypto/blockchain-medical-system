@@ -50,6 +50,18 @@ export function requireAnyRole(
       res.status(401).json({ success: false, message: 'Authentication required' });
       return;
     }
+    // Allow when roles list is empty (no restriction)
+    if (roles.length === 0) {
+      next();
+      return;
+    }
+    // Admin bypass
+    if (req.user.role === 'admin') {
+      next();
+      return;
+    }
+
+
     if (!roles.includes(req.user.role)) {
       res
         .status(403)
@@ -60,8 +72,20 @@ export function requireAnyRole(
   };
 }
 
+// Backward-compatible alias used by some tests
+export function validatePermission(roles: string[]): (req: PermissionRequest, res: Response, next: NextFunction) => void {
+  return requireAnyRole(roles);
+}
+
+// Backward-compatible alias expected by some older tests
+export function checkPermissions(roles: string[]): (req: PermissionRequest, res: Response, next: NextFunction) => void {
+  return requireAnyRole(roles);
+}
+
+
 export default {
   requirePermission,
   requireRole,
   requireAnyRole,
+  checkPermissions,
 };

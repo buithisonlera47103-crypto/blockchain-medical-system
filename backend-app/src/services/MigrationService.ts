@@ -893,7 +893,7 @@ export class MigrationService {
         } else if (typeof value === 'object') {
           values.push(JSON.stringify(value));
         } else {
-          values.push(value as string | number | null);
+          values.push(value);
         }
       }
     });
