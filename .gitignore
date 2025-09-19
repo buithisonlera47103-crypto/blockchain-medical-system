@@ -124,3 +124,22 @@ chaincode/
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+# Fabric network build artifacts and runtime files
+backend-app/deployment/fabric-network/admin-get.json
+backend-app/deployment/fabric-network/backup_/
+backend-app/deployment/fabric-network/channel-artifacts/
+backend-app/deployment/fabric-network/crypto-config/
+backend-app/deployment/fabric-network/emr-*.json
+backend-app/deployment/fabric-network/join-*.json
+backend-app/deployment/fabric-network/orderer-runtime/
+backend-app/deployment/fabric-network/temp-*.yaml
+backend-app/deployment/fabric-network/fabric-samples/
+
+# Fabric chaincode and crypto artifacts
+crypto-config/
+emr-chaincode.tar.gz
+fabric-samples/
+
+# Build and temporary files
+*.tar.gz
+temp-*
