@@ -22,11 +22,14 @@ import {
 import AppointmentsContent from './DashboardContent/AppointmentsContent';
 import AuditLogContent from './DashboardContent/AuditLogContent';
 import ConsultationCollaborationContent from './DashboardContent/ConsultationCollaborationContent';
+import CreateMedicalRecordContent from './DashboardContent/CreateMedicalRecordContent';
 import DiagnosisToolsContent from './DashboardContent/DiagnosisToolsContent';
 import DoctorChatContent from './DashboardContent/DoctorChatContent';
 import DoctorDashboardContent from './DashboardContent/DoctorDashboardContent';
+import DoctorPrescriptionContent from './DashboardContent/DoctorPrescriptionContent';
 import EmergencyContactContent from './DashboardContent/EmergencyContactContent';
 import ExaminationReportsContent from './DashboardContent/ExaminationReportsContent';
+import FileUploadContent from './DashboardContent/FileUploadContent';
 import HealthDataContent from './DashboardContent/HealthDataContent';
 import HospitalManagementContent from './DashboardContent/HospitalManagementContent';
 import InsuranceInfoContent from './DashboardContent/InsuranceInfoContent';
@@ -42,6 +45,8 @@ import SystemSettingsContent from './DashboardContent/SystemSettingsContent';
 // Icons will be imported as needed
 import UserManagementContent from './DashboardContent/UserManagementContent';
 import EncryptedSearch from './EncryptedSearch';
+import ContinuingEducationContent from './DashboardContent/ContinuingEducationContent';
+import EncryptedSearchContent from './DashboardContent/EncryptedSearchContent';
 
 const Dashboard: React.FC = () => {
   // const { t } = useTranslation();
@@ -50,6 +55,7 @@ const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   // const [stats, setStats] = useState({
   //   totalRecords: 156,
   //   totalValue: 2450000,
@@ -79,10 +85,12 @@ const Dashboard: React.FC = () => {
       return [
         ...baseItems,
         { key: 'patients', name: '患者管理', icon: '👥' },
-        { key: 'appointments', name: '预约管理', icon: '📅' },
+        { key: 'create-record', name: '新建病历', icon: '📝' },
         { key: 'medical-records', name: '医疗记录', icon: '📋' },
+        { key: 'file-upload', name: '文件上传', icon: '📤' },
+        { key: 'prescriptions', name: '处方管理', icon: '💊' },
+        { key: 'appointments', name: '预约管理', icon: '📅' },
         { key: 'encrypted-search', name: '加密搜索', icon: '🔍' },
-        { key: 'prescriptions', name: '处方开具', icon: '💊' },
         { key: 'diagnosis', name: '诊断工具', icon: '🔬' },
         { key: 'reports', name: '报告审核', icon: '📄' },
         { key: 'schedule', name: '排班管理', icon: '🗓️' },
@@ -127,10 +135,13 @@ const Dashboard: React.FC = () => {
       case 'history':
         return <HistoryContent />;
       case 'chat':
+        console.log('🔄 切换到聊天页面，用户角色:', user?.role);
         // 根据用户角色显示不同的聊天界面
         if (user?.role === 'patient') {
+          console.log('👤 渲染患者聊天界面');
           return <PatientChatContent />;
         }
+        console.log('👨‍⚕️ 渲染医生聊天界面');
         return <DoctorChatContent />;
       case 'notifications':
         return <NotificationContent />;
@@ -143,12 +154,16 @@ const Dashboard: React.FC = () => {
       case 'medical-records':
         return <MedicalRecordsContent />;
       case 'encrypted-search':
-        return <EncryptedSearch />;
+        return <EncryptedSearchContent />;
       case 'health-data':
         return <HealthDataContent />;
       case 'appointments':
         return <AppointmentsContent />;
       case 'prescriptions':
+        // 根据用户角色显示不同的处方界面
+        if (user?.role === 'doctor') {
+          return <DoctorPrescriptionContent />;
+        }
         return <PrescriptionContent />;
       case 'examination-reports':
         return <ExaminationReportsContent />;
@@ -159,6 +174,10 @@ const Dashboard: React.FC = () => {
       // 医生专用功能
       case 'patients':
         return <PatientManagementContent />; // 医生的患者管理
+      case 'create-record':
+        return <CreateMedicalRecordContent />;
+      case 'file-upload':
+        return <FileUploadContent />;
       case 'diagnosis':
         return <DiagnosisToolsContent />;
       case 'schedule':
@@ -168,12 +187,7 @@ const Dashboard: React.FC = () => {
       case 'research':
         return <ResearchDataContent />;
       case 'education':
-        return (
-          <div className="p-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">继续教育</h2>
-            <p className="text-gray-600 dark:text-gray-400">医学继续教育资源和课程</p>
-          </div>
-        );
+        return <ContinuingEducationContent />;
       case 'overview':
         // For patients, show the specialized patient dashboard
         if (user?.role === 'patient') {
@@ -181,7 +195,7 @@ const Dashboard: React.FC = () => {
         }
         // For doctors, show the specialized doctor dashboard
         if (user?.role === 'doctor') {
-          return <DoctorDashboardContent />;
+          return <DoctorDashboardContent onNavigate={handleNavClick} />;
         }
         // For other roles, show the default dashboard content
         return (
@@ -202,7 +216,11 @@ const Dashboard: React.FC = () => {
       case 'system':
         return <SystemSettingsContent />;
       case 'reports':
-        return <StatisticsReportContent />;
+        // 根据用户角色显示不同的报告界面
+        if (user?.role === 'doctor') {
+          return <ExaminationReportsContent />; // 医生的报告审核界面
+        }
+        return <StatisticsReportContent />; // 管理员的统计报告
       case 'dashboard':
       default:
         // For patients, show the specialized patient dashboard
@@ -211,7 +229,7 @@ const Dashboard: React.FC = () => {
         }
         // For doctors, show the specialized doctor dashboard
         if (user?.role === 'doctor') {
-          return <DoctorDashboardContent />;
+          return <DoctorDashboardContent onNavigate={handleNavClick} />;
         }
 
         return (
@@ -640,92 +658,255 @@ const Dashboard: React.FC = () => {
     navigate('/login');
   };
 
-  // 渲染侧边导航栏
+  // 渲染侧边导航栏 - 升级版（可收起）
   const renderNavigation = () => {
     return (
-      <div className="fixed left-0 top-0 bottom-0 w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 shadow-xl z-50">
+      <div className={`fixed left-0 top-0 bottom-0 bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-r border-gray-200/30 dark:border-gray-700/30 shadow-2xl z-50 transition-all duration-300 ${
+        sidebarCollapsed ? 'w-20' : 'w-72'
+      }`}>
         <div className="flex flex-col h-full">
-          {/* Logo区域 */}
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex items-center space-x-3">
-              <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                <span className="text-white text-2xl font-bold">🏥</span>
-              </div>
-              <div>
-                <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                  医疗链平台
-                </span>
-                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Healthcare Platform
+          {/* Logo区域 - 升级版 */}
+          <div className={`border-b border-gray-200/30 dark:border-gray-700/30 relative overflow-hidden transition-all duration-300 ${
+            sidebarCollapsed ? 'p-4' : 'p-6'
+          }`}>
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-indigo-500/5 to-cyan-500/5"></div>
+            <div className="relative flex items-center space-x-4">
+              <div className={`bg-gradient-to-br from-blue-500 via-indigo-600 to-cyan-600 rounded-3xl flex items-center justify-center shadow-2xl hover:shadow-blue-500/25 hover:scale-110 transition-all duration-300 group relative ${
+                sidebarCollapsed ? 'w-12 h-12' : 'w-16 h-16'
+              }`}>
+                <span className={`text-white font-bold group-hover:rotate-12 transition-transform duration-300 ${
+                  sidebarCollapsed ? 'text-xl' : 'text-3xl'
+                }`}>🏥</span>
+                <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 rounded-full animate-pulse flex items-center justify-center">
+                  <div className="w-2 h-2 bg-white rounded-full"></div>
                 </div>
               </div>
+              
+              {!sidebarCollapsed && (
+                <div className="space-y-1">
+                  <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-indigo-700 to-cyan-700 bg-clip-text text-transparent">
+                    医疗链平台
+                  </h1>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">
+                    BlockChain Medical Platform
+                  </p>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-xs text-green-600 dark:text-green-400 font-semibold">系统在线</span>
+                    <div className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-xs font-semibold">
+                      v2.1.0
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 收起/展开按钮 */}
+              <button
+                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                className={`flex items-center justify-center w-8 h-8 bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 hover:from-blue-100 hover:to-indigo-100 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30 rounded-xl transition-all duration-300 hover:scale-110 group shadow-lg ${
+                  sidebarCollapsed ? 'ml-0' : 'ml-auto'
+                }`}
+                title={sidebarCollapsed ? '展开导航栏' : '收起导航栏'}
+              >
+                <span className={`text-sm transition-transform duration-300 group-hover:scale-110 ${
+                  sidebarCollapsed ? 'rotate-180' : ''
+                }`}>
+                  ◀
+                </span>
+              </button>
             </div>
           </div>
 
-          {/* 导航菜单区域 */}
-          <div className="flex-1 overflow-y-auto py-4">
-            <nav className="px-4 space-y-1">
-              {navigationItems.map(item => (
+          {/* 导航菜单区域 - 升级版 */}
+          <div className={`flex-1 overflow-y-auto pb-4 transition-all duration-300 ${
+            sidebarCollapsed ? 'px-2' : 'px-4'
+          }`}>
+            <nav className="space-y-2 pt-4">
+              {navigationItems.map((item, index) => (
                 <button
                   key={item.key}
                   onClick={() => handleNavClick(item.key)}
-                  className={`group flex items-center px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 hover:scale-105 w-full text-left ${
+                  className={`group flex items-center w-full rounded-2xl text-sm font-semibold transition-all duration-300 hover:scale-[1.02] relative overflow-hidden ${
+                    sidebarCollapsed 
+                      ? 'px-3 py-3 justify-center' 
+                      : 'px-4 py-4'
+                  } ${
                     activeTab === item.key
-                      ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg transform scale-105'
-                      : 'text-gray-600 dark:text-gray-300 hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50 dark:hover:from-blue-900/20 dark:hover:to-purple-900/20 hover:text-blue-600 dark:hover:text-blue-400'
+                      ? 'bg-gradient-to-r from-blue-500 via-indigo-600 to-cyan-600 text-white shadow-2xl transform scale-[1.02]'
+                      : 'text-gray-600 dark:text-gray-300 hover:bg-gradient-to-br hover:from-blue-50 hover:via-indigo-50 hover:to-cyan-50 dark:hover:from-blue-900/20 dark:hover:via-indigo-900/20 dark:hover:to-cyan-900/20 hover:text-blue-700 dark:hover:text-blue-300 hover:shadow-lg'
                   }`}
+                  style={{ animationDelay: `${index * 50}ms` }}
+                  title={sidebarCollapsed ? item.name : ''}
                 >
+                  {/* 活跃状态背景动画 */}
+                  {activeTab === item.key && (
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-400/20 via-indigo-500/20 to-cyan-500/20 animate-pulse rounded-2xl"></div>
+                  )}
+
+                  {/* 图标 */}
                   <span
-                    className={`mr-3 text-lg transition-transform group-hover:scale-110 ${
-                      activeTab === item.key ? 'text-white' : ''
+                    className={`transition-all duration-300 relative z-10 ${
+                      sidebarCollapsed ? 'text-lg' : 'text-xl mr-4'
+                    } ${
+                      activeTab === item.key ? 'scale-110 drop-shadow-lg' : 'group-hover:scale-110'
                     }`}
                   >
                     {item.icon}
                   </span>
-                  <span className="truncate">{item.name}</span>
-                  {activeTab === item.key && (
-                    <div className="ml-auto w-2 h-2 bg-white rounded-full animate-pulse"></div>
+
+                  {/* 文字 - 只在展开时显示 */}
+                  {!sidebarCollapsed && (
+                    <>
+                      <span className="font-semibold relative z-10 flex-1 text-left">{item.name}</span>
+
+                      {/* 活跃指示器和通知徽章 */}
+                      <div className="relative z-10 flex items-center space-x-2">
+                        {activeTab === item.key && (
+                          <div className="flex items-center space-x-2">
+                            <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                            <div className="w-1 h-6 bg-white/30 rounded-full"></div>
+                          </div>
+                        )}
+                      </div>
+                    </>
                   )}
+
+                  {/* 收起状态下的活跃指示器 */}
+                  {sidebarCollapsed && activeTab === item.key && (
+                    <div className="absolute -right-1 top-1/2 transform -translate-y-1/2 w-1 h-8 bg-white rounded-full"></div>
+                  )}
+
+                  {/* 悬停效果光线 */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-2xl"></div>
                 </button>
               ))}
             </nav>
           </div>
 
-          {/* 底部用户信息和操作区域 */}
-          <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-            {/* 操作按钮 */}
-            <div className="flex items-center justify-between mb-4">
-              <button
-                onClick={toggleTheme}
-                className="p-3 rounded-xl bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 hover:scale-110 shadow-md"
-                title={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
-              >
-                <span className="text-lg">{theme === 'dark' ? '🌞' : '🌙'}</span>
-              </button>
-              <button
-                onClick={handleLogout}
-                className="p-3 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-200 hover:scale-110 shadow-md"
-                title="退出登录"
-              >
-                <span className="text-lg">🚪</span>
-              </button>
-            </div>
+          {/* 底部区域 - 在线状态和操作 */}
+          <div className={`border-t border-gray-200/30 dark:border-gray-700/30 space-y-4 transition-all duration-300 ${
+            sidebarCollapsed ? 'p-2' : 'p-4'
+          }`}>
+            
+            {/* 用户信息卡片 - 移至底部 */}
+            {!sidebarCollapsed ? (
+              <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-cyan-50 dark:from-blue-900/20 dark:via-indigo-900/20 dark:to-cyan-900/20 rounded-3xl p-4 border border-blue-200/50 dark:border-blue-700/30 shadow-lg hover:shadow-xl transition-all duration-300">
+                <div className="flex items-center space-x-3">
+                  <div className="relative">
+                    <div className="w-14 h-14 bg-gradient-to-br from-green-400 via-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-xl">
+                      <span className="text-white text-xl font-bold">
+                        {user?.username?.charAt(0)?.toUpperCase() || user?.name?.charAt(0)?.toUpperCase() || 'U'}
+                      </span>
+                    </div>
+                    <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 border-2 border-white dark:border-gray-900 rounded-full flex items-center justify-center">
+                      <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <p className="text-sm font-bold text-gray-900 dark:text-white truncate">
+                      {user?.username || user?.name || '用户'}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate flex items-center">
+                      <span className="mr-1">
+                        {user?.role === UserRole.PATIENT ? '🏥' :
+                         user?.role === UserRole.DOCTOR ? '👨‍⚕️' :
+                         user?.role === UserRole.HOSPITAL_ADMIN ? '🏢' :
+                         user?.role === UserRole.SYSTEM_ADMIN ? '⚙️' :
+                         user?.role === UserRole.SUPER_ADMIN ? '👑' :
+                         user?.role === UserRole.AUDITOR ? '🔍' : '👤'}
+                      </span>
+                      {user?.role === UserRole.PATIENT ? '患者用户' :
+                       user?.role === UserRole.DOCTOR ? '医生' :
+                       user?.role === UserRole.HOSPITAL_ADMIN ? '医院管理员' :
+                       user?.role === UserRole.SYSTEM_ADMIN ? '系统管理员' :
+                       user?.role === UserRole.SUPER_ADMIN ? '超级管理员' :
+                       user?.role === UserRole.AUDITOR ? '审计员' : '普通用户'}
+                    </p>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-1 h-1 bg-green-500 rounded-full"></div>
+                      <span className="text-xs text-green-600 dark:text-green-400 font-semibold">在线</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* 收起状态下的简化用户信息 */
+              <div className="flex justify-center">
+                <div className="relative">
+                  <div className="w-12 h-12 bg-gradient-to-br from-green-400 via-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-xl">
+                    <span className="text-white text-lg font-bold">
+                      {user?.username?.charAt(0)?.toUpperCase() || user?.name?.charAt(0)?.toUpperCase() || 'U'}
+                    </span>
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white dark:border-gray-900 rounded-full flex items-center justify-center">
+                    <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>
+                  </div>
+                </div>
+              </div>
+            )}
 
-            {/* 用户信息 */}
-            <div className="flex items-center space-x-3 p-3 bg-white dark:bg-gray-700 rounded-xl shadow-md">
-              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
-                <span className="text-white text-sm font-bold">{(user?.name || '用户')[0]}</span>
+            {/* 快捷操作按钮组 */}
+            {!sidebarCollapsed ? (
+              <div className="grid grid-cols-3 gap-3">
+                <button 
+                  onClick={toggleTheme}
+                  className="flex items-center justify-center h-12 bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 hover:from-yellow-100 hover:to-orange-100 dark:hover:from-yellow-900/30 dark:hover:to-orange-900/30 rounded-2xl transition-all duration-300 hover:scale-110 group shadow-lg hover:shadow-xl"
+                  title={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
+                >
+                  <span className="text-lg group-hover:scale-125 transition-transform duration-300">
+                    {theme === 'dark' ? '🌞' : '🌙'}
+                  </span>
+                </button>
+                <button className="flex items-center justify-center h-12 bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 hover:from-blue-100 hover:to-indigo-100 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30 rounded-2xl transition-all duration-300 hover:scale-110 group shadow-lg hover:shadow-xl relative">
+                  <span className="text-lg group-hover:scale-125 transition-transform duration-300">🔔</span>
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                </button>
+                <button className="flex items-center justify-center h-12 bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 hover:from-green-100 hover:to-emerald-100 dark:hover:from-green-900/30 dark:hover:to-emerald-900/30 rounded-2xl transition-all duration-300 hover:scale-110 group shadow-lg hover:shadow-xl">
+                  <span className="text-lg group-hover:scale-125 transition-transform duration-300">⚙️</span>
+                </button>
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                  {user?.name || '用户'}
-                </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                  {user?.role || '医生'} • 在线
-                </div>
+            ) : (
+              /* 收起状态下的垂直按钮组 */
+              <div className="space-y-2">
+                <button 
+                  onClick={toggleTheme}
+                  className="flex items-center justify-center w-12 h-10 bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 hover:from-yellow-100 hover:to-orange-100 dark:hover:from-yellow-900/30 dark:hover:to-orange-900/30 rounded-xl transition-all duration-300 hover:scale-110 group shadow-lg hover:shadow-xl mx-auto"
+                  title={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
+                >
+                  <span className="text-sm group-hover:scale-125 transition-transform duration-300">
+                    {theme === 'dark' ? '🌞' : '🌙'}
+                  </span>
+                </button>
+                <button className="flex items-center justify-center w-12 h-10 bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 hover:from-blue-100 hover:to-indigo-100 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30 rounded-xl transition-all duration-300 hover:scale-110 group shadow-lg hover:shadow-xl relative mx-auto">
+                  <span className="text-sm group-hover:scale-125 transition-transform duration-300">🔔</span>
+                  <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                </button>
               </div>
-              <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-            </div>
+            )}
+
+            {/* 退出登录按钮 */}
+            <button
+              onClick={handleLogout}
+              className={`w-full flex items-center justify-center text-sm font-bold bg-gradient-to-r from-red-50 via-pink-50 to-red-50 dark:from-red-900/20 dark:via-pink-900/20 dark:to-red-900/20 text-red-600 dark:text-red-400 hover:from-red-100 hover:via-pink-100 hover:to-red-100 dark:hover:from-red-900/40 dark:hover:via-pink-900/40 dark:hover:to-red-900/40 hover:text-red-700 dark:hover:text-red-300 rounded-2xl border-2 border-red-200/50 dark:border-red-700/30 transition-all duration-300 hover:scale-105 hover:shadow-xl hover:shadow-red-500/25 group ${
+                sidebarCollapsed ? 'px-2 py-2' : 'px-4 py-3'
+              }`}
+              title={sidebarCollapsed ? '安全退出' : ''}
+            >
+              <span className={`transition-transform duration-300 group-hover:rotate-12 ${
+                sidebarCollapsed ? 'text-base' : 'mr-3 text-lg'
+              }`}>🚪</span>
+              {!sidebarCollapsed && (
+                <>
+                  <span>安全退出</span>
+                  <div className="ml-auto opacity-0 group-hover:opacity-100 transition-all duration-300">
+                    <div className="flex items-center space-x-1">
+                      <div className="w-1 h-1 bg-red-500 rounded-full"></div>
+                      <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>
@@ -752,19 +933,21 @@ const Dashboard: React.FC = () => {
     );
   }
 
-  const mainContentClass = 'ml-64 h-screen overflow-hidden';
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
       {renderNavigation()}
 
-      <main className={`${mainContentClass}`}>
+      <main className={`min-h-screen overflow-y-auto transition-all duration-300 ${
+        sidebarCollapsed ? 'ml-20' : 'ml-72'
+      }`}>
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
           </div>
         ) : (
-          renderContent()
+          <div className="h-full">
+            {renderContent()}
+          </div>
         )}
       </main>
     </div>
