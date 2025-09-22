@@ -1,0 +1,132 @@
+name: 性能基线与ZAP扫描 (Performance Baseline and ZAP Scans)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-perf:
+    name: Build and Performance Baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend-app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Configure Git to use HTTPS for GitHub
+        run: |
+          git config --global url."https://github.com/".insteadOf ssh://git@github.com/
+          git config --global url."https://github.com/".insteadOf git@github.com:
+
+      - name: Install deps
+        run: npm install --no-fund --no-audit
+
+      - name: Build
+        run: npm run build
+
+      - name: Start server (LIGHT_MODE)
+        run: |
+          nohup npm run start:light > server.log 2>&1 & echo $! > server.pid
+          sleep 2
+
+      - name: Wait for health
+        run: |
+          for i in {1..60}; do
+            if curl -sf http://localhost:3001/health >/dev/null; then echo OK; exit 0; fi
+            sleep 1
+          done
+          echo "Server failed to start" && cat server.log && exit 1
+
+      - name: Run performance baseline check
+        env:
+          MIN_QPS: '15000'
+          MAX_P99_MS: '300'
+          PERF_DURATION: '20'
+          PERF_WARMUP: '5'
+          PERF_REPEATS: '3'
+        run: node scripts/check-perf.js
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then kill $(cat server.pid) || true; fi
+          sleep 1
+          pkill -f "node dist/index.js" || true
+
+  zap-scan:
+    name: OWASP ZAP Baseline and Full Scan
+    runs-on: ubuntu-latest
+    needs: build-and-perf
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: backend-app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Configure Git to use HTTPS for GitHub
+        run: |
+          git config --global url."https://github.com/".insteadOf ssh://git@github.com/
+          git config --global url."https://github.com/".insteadOf git@github.com:
+
+      - name: Install deps
+        run: npm install --no-fund --no-audit
+
+      - name: Build
+        run: npm run build
+
+      - name: Start server (LIGHT_MODE)
+        run: |
+          nohup npm run start:light > server.log 2>&1 & echo $! > server.pid
+          sleep 2
+
+      - name: Wait for health
+        run: |
+          for i in {1..60}; do
+            if curl -sf http://localhost:3001/health >/dev/null; then echo OK; exit 0; fi
+            sleep 1
+          done
+          echo "Server failed to start" && cat server.log && exit 1
+
+      - name: Run ZAP Baseline (host network)
+        run: |
+          docker run --rm --network=host -v "$PWD":/zap/wrk -t owasp/zap2docker-stable \
+            zap-baseline.py -t http://localhost:3001 -r zap-baseline.html || true
+
+      - name: Run ZAP Full (host network, 5 min)
+        run: |
+          docker run --rm --network=host -v "$PWD":/zap/wrk -t owasp/zap2docker-stable \
+            zap-full-scan.py -t http://localhost:3001 -r zap-full.html -m 5 || true
+
+      - name: Upload ZAP Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-reports
+          path: |
+            backend-app/zap-baseline.html
+            backend-app/zap-full.html
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then kill $(cat server.pid) || true; fi
+          sleep 1
+          pkill -f "node dist/index.js" || true
+
