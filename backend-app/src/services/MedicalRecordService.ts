@@ -619,4 +619,103 @@ export class MedicalRecordService {
     return this.generateRecordId();
   }
 
+  /**
+   * Finalize a record given an already-streamed IPFS upload result
+   * Persists DB rows, stores data key, triggers blockchain and search indexing.
+   */
+  async finalizeRecordFromIpfsUpload(input: {
+    patientId: string;
+    fileName: string;
+    mimeType: string;
+    fileSize: number;
+    contentHash: string;
+    cid: string;
+    dataKey: Buffer;
+    uploadedBy: string;
+  }): Promise<{ recordId: string; txId: string | null; ipfsCid: string | null; message: string; }> {
+    const fileType = this.determineFileType(input.fileName, input.mimeType);
+
+    // Insert base record first
+    const insertSql = `
+      INSERT INTO medical_records (
+        record_id, patient_id, creator_id, title, description, file_type, file_size, content_hash, blockchain_tx_hash
+      ) VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, NULL)
+    `;
+    await this.db.execute<ResultSetHeader>(insertSql, [
+      input.patientId,
+      input.uploadedBy,
+      input.fileName,
+      '',
+      fileType,
+      input.fileSize,
+      input.contentHash,
+    ]);
+
+    const [rows] = await this.db.query<RowDataPacket[]>(
+      'SELECT record_id FROM medical_records WHERE patient_id = ? AND creator_id = ? ORDER BY created_at DESC LIMIT 1',
+      [input.patientId, input.uploadedBy]
+    );
+    const recordId = (rows[0]?.record_id as string) ?? '';
+
+    // Persist IPFS metadata
+    try {
+      await this.db.execute<ResultSetHeader>(
+        `INSERT INTO ipfs_metadata (cid, record_id, file_name, file_size, mime_type, encryption_algorithm)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [input.cid, recordId, input.fileName, input.fileSize, input.mimeType, 'AES-256-GCM']
+      );
+    } catch (e) {
+      logger.warn('Persisting ipfs_metadata failed', { error: (e as Error)?.message, recordId, cid: input.cid });
+    }
+
+    // Store data key mapping (envelope model)
+    try {
+      const kms = KeyManagementService.getInstance();
+      await kms.storeRecordDataKey(recordId, input.dataKey, input.uploadedBy);
+      await kms.registerCidForRecord(recordId, input.cid);
+    } catch (e) {
+      logger.warn('Storing data key / cid mapping failed', { error: (e as Error)?.message, recordId });
+    }
+
+    // Try blockchain create
+    let txId: string | null = null;
+    try {
+      const bc = BlockchainService.getInstance();
+      const bcRes = await bc.createRecord({
+        recordId,
+        patientId: input.patientId,
+        doctorId: input.uploadedBy,
+        data: input.cid,
+        hash: input.contentHash,
+      });
+      if (bcRes.success && typeof bcRes.data === 'string') {
+        txId = bcRes.data;
+        await this.db.execute<ResultSetHeader>(
+          'UPDATE medical_records SET blockchain_tx_hash = ? WHERE record_id = ?',
+          [txId, recordId]
+        );
+      }
+    } catch (e) {
+      logger.warn('Blockchain createRecord failed (non-fatal)', { error: (e as Error)?.message, recordId });
+    }
+
+    // Index to search
+    try {
+      await this.indexRecordToSearch({
+        patientId: input.patientId,
+        fileBuffer: Buffer.alloc(0),
+        fileName: input.fileName,
+        mimeType: input.mimeType,
+        metadata: { uploadedBy: input.uploadedBy, uploadedAt: new Date().toISOString(), fileSize: input.fileSize }
+      }, recordId, input.uploadedBy, fileType, input.contentHash, input.cid, txId);
+    } catch { void 0; }
+
+    return {
+      recordId,
+      txId,
+      ipfsCid: input.cid,
+      message: 'record stored with streamed IPFS metadata; blockchain optional',
+    };
+  }
+
 }

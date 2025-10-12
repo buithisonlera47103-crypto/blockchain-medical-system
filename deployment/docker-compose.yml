@@ -18,7 +18,7 @@ services:
       # Backend expects MYSQL_* per src/config/database.ts
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
-      - MYSQL_DATABASE=emr_blockchain
+      - MYSQL_DATABASE=blockchain_emr
       - MYSQL_USER=emr_user
       - MYSQL_PASSWORD_FILE=/run/secrets/mysql_password
       # Optional caches

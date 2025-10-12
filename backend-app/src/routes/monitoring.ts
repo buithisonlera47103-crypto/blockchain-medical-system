@@ -6,6 +6,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 
 import { authenticateToken } from '../middleware/auth';
+import { AuditService } from '../services/AuditService';
 import { MonitoringService } from '../services/MonitoringService';
 import { logger } from '../utils/logger';
 
@@ -68,6 +69,111 @@ const monitoringLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+
+// Alertmanager Webhook → Audit logs
+
+// Optional limiter for webhook (disabled in tests)
+const webhookLimiter: express.RequestHandler = ((env: Record<string, string>): express.RequestHandler => {
+  const disable = env.NODE_ENV === 'test' || (env.DISABLE_WEBHOOK_LIMIT ?? '').toLowerCase() === 'true';
+  if (disable) return (_req, _res, next) => next();
+  return rateLimit({
+    windowMs: 60 * 1000,
+    max: 240, // up to 240 posts/minute
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'TOO_MANY_WEBHOOK_REQUESTS', statusCode: 429 },
+  });
+})(process.env as Record<string, string>);
+
+// Alertmanager webhook endpoint (unauthenticated, token-protected)
+router.post(
+  '/alertmanager/webhook',
+  webhookLimiter,
+  (req: Request, res: Response, next: NextFunction): void => {
+    void (async (): Promise<void> => {
+      try {
+        const expectedToken = String(process.env.ALERTMANAGER_WEBHOOK_TOKEN ?? '').trim();
+        const headerTokenRaw = req.get('X-ALERTMANAGER-TOKEN');
+        const queryTokenRaw = ((): string => {
+          const t = (req.query as Record<string, unknown>)?.token;
+          if (typeof t === 'string') return t;
+          if (Array.isArray(t) && t.length > 0 && typeof t[0] === 'string') return t[0];
+          return '';
+        })();
+        const providedToken = String(headerTokenRaw ?? queryTokenRaw ?? '').trim();
+        if (expectedToken && providedToken !== expectedToken) {
+          res.status(401).json({ error: 'UNAUTHORIZED_WEBHOOK', message: 'Invalid or missing webhook token' });
+          return;
+        }
+
+        type AMAlert = {
+          status?: string;
+          labels?: Record<string, unknown> & { alertname?: string };
+          annotations?: Record<string, unknown>;
+          startsAt?: string;
+          endsAt?: string;
+          generatorURL?: string;
+          fingerprint?: string;
+        };
+        type AMPayload = {
+          status?: string;
+          receiver?: string;
+          groupLabels?: Record<string, unknown>;
+          commonLabels?: Record<string, unknown>;
+          commonAnnotations?: Record<string, unknown>;
+          externalURL?: string;
+          alerts?: AMAlert[];
+        };
+
+        const payload = req.body as AMPayload | undefined;
+        const alerts = payload?.alerts ?? [];
+        if (!Array.isArray(alerts)) {
+          res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'alerts must be an array' });
+          return;
+        }
+
+        const audit = new AuditService();
+        let processed = 0;
+        for (const a of alerts) {
+          const action = a.status === 'resolved' ? 'ALERT_RESOLVED' : 'ALERT_FIRING';
+          const resource = a.labels?.alertname ?? 'alert';
+          const details = {
+            receiver: payload?.receiver,
+            groupLabels: payload?.groupLabels,
+            commonLabels: payload?.commonLabels,
+            commonAnnotations: payload?.commonAnnotations,
+            externalURL: payload?.externalURL,
+            alert: {
+              status: a.status,
+              labels: a.labels,
+              annotations: a.annotations,
+              startsAt: a.startsAt,
+              endsAt: a.endsAt,
+              generatorURL: a.generatorURL,
+              fingerprint: a.fingerprint,
+            },
+          } as Record<string, unknown>;
+
+        await audit.logEvent({
+          userId: 'system',
+          action,
+          resource,
+          details,
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent') ?? 'Alertmanager',
+        });
+        processed += 1;
+        }
+
+        res.status(202).json({ success: true, processed });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'webhook error';
+        res.status(500).json({ error: 'WEBHOOK_ERROR', message });
+      }
+    })().catch(next);
+  }
+);
 
 /**
  * @swagger

@@ -16,7 +16,23 @@ export function requirePermission(
       res.status(401).json({ success: false, message: 'Authentication required' });
       return;
     }
-    if (!req.user.permissions?.includes(permission)) {
+    const perms = req.user.permissions ?? [];
+    // Admin wildcard support
+    if (perms.includes('*')) { next(); return; }
+    // Backward-compatible aliases
+    const legacyMap: Record<string, string> = {
+      'read_medical_records': 'record:read',
+      'write_medical_records': 'record:write',
+      'manage_record_access': 'record:access:manage',
+    };
+    const newToLegacy: Record<string, string> = Object.fromEntries(Object.entries(legacyMap).map(([k, v]) => [v, k]));
+    const acceptable = new Set<string>([permission]);
+    const legacy = newToLegacy[permission];
+    if (legacy) acceptable.add(legacy);
+    const modern = legacyMap[permission];
+    if (modern) acceptable.add(modern);
+    const ok = perms.some(p => acceptable.has(p));
+    if (!ok) {
       res
         .status(403)
         .json({ success: false, message: `Permission '${permission}' required` });

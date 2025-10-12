@@ -425,8 +425,8 @@ router.get(
           return;
         }
 
-        const from = start ? new Date(start as string) : new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const to = end ? new Date(end as string) : new Date();
+        const _from = start ? new Date(start as string) : new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const _to = end ? new Date(end as string) : new Date();
 
         const stats = { totalLogs: 0, errorCount: 0, warningCount: 0, infoCount: 0 };
         res.status(200).json(stats);

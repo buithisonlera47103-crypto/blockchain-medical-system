@@ -3,6 +3,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import abacEnforce from '../middleware/abac';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/auth';
+import { auditService } from '../services/AuditService';
 import BlockchainService from '../services/BlockchainService';
 interface MedicalRecordService {
   createAccessRequest: (userId: string, options: {
@@ -488,6 +489,7 @@ router.put(
       const { recordId } = req.params;
       const { policy }: PolicyUpdateBody = req.body;
       const user = req.user;
+      const requestId = req.get('X-Request-ID') ?? req.get('x-request-id') ?? undefined;
 
       if (!user) {
         res.status(401).json({
@@ -537,6 +539,16 @@ router.put(
         JSON.stringify(policy),
         recordId,
       ]);
+
+      // 审计：记录策略更新
+      void auditService.logEvent({
+        userId: user.userId,
+        action: 'permission_policy_update',
+        resource: req.originalUrl,
+        details: { requestId, recordId, method: req.method },
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent') ?? undefined,
+      });
 
       res.status(200).json({
         recordId,
@@ -613,6 +625,7 @@ router.post(
       const { requestId } = req.params;
       const { duration, conditions, comment }: ApprovalBody = req.body;
       const user = req.user;
+      const requestIdHeader = req.get('X-Request-ID') ?? req.get('x-request-id') ?? undefined;
 
       if (!user) {
         res.status(401).json({
@@ -654,6 +667,15 @@ router.post(
         comment,
       });
 
+      // 审计：记录访问请求审批
+      void auditService.logEvent({
+        userId: user.userId,
+        action: 'access_request_approve',
+        resource: req.originalUrl,
+        details: { requestId, method: req.method, requestIdHeader },
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent') ?? undefined,
+      });
 
       res.status(200).json(result);
     } catch (error: unknown) {
@@ -732,6 +754,7 @@ router.post(
       const { requestId } = req.params;
       const { reason }: RejectionBody = req.body;
       const user = req.user;
+      const requestIdHeader = req.get('X-Request-ID') ?? req.get('x-request-id') ?? undefined;
 
       if (!user) {
         res.status(401).json({
@@ -768,6 +791,17 @@ router.post(
       }
 
       const result = await medicalRecordService.rejectAccessRequest(requestId, user.userId, reason);
+
+      // 审计：记录访问请求拒绝
+      void auditService.logEvent({
+        userId: user.userId,
+        action: 'access_request_reject',
+        resource: req.originalUrl,
+        details: { requestId, reason, method: req.method, requestIdHeader },
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent') ?? undefined,
+      });
+
       res.status(200).json(result);
     } catch (error: unknown) {
       if (error instanceof Error) {

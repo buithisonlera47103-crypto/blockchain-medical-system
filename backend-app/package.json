@@ -8,9 +8,17 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "start:light": "LIGHT_MODE=true ENABLE_RATE_LIMIT=false NODE_ENV=production PORT=3001 START_SERVER=true node dist/index.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "lint": "eslint \"src/**/*.{ts,tsx,js}\"",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "perf:ping": "autocannon -c 250 -d 20 -p 10 http://localhost:3001/perf/ping",
+    "perf:baseline": "autocannon -c 250 -d 10 -p 10 -j http://localhost:3001/perf/ping > perf-baseline.json",
+    "perf:gate": "node scripts/check-perf.js",
+    "zap:baseline": "docker run --rm --network=host -v \"$PWD\":/zap/wrk -t owasp/zap2docker-stable zap-baseline.py -t http://localhost:3001 -r zap-baseline.html",
+    "zap:full": "docker run --rm --network=host -v \"$PWD\":/zap/wrk -t owasp/zap2docker-stable zap-full-scan.py -t http://localhost:3001 -r zap-full.html -m 5",
+    "audit": "npm audit",
+    "audit:fix": "npm audit fix"
   },
   "dependencies": {
     "@elastic/elasticsearch": "^8.15.0",
@@ -31,13 +39,12 @@
     "fabric-network": "^2.2.19",
     "helmet": "^7.0.0",
     "ioredis": "^5.3.2",
-    "ipfs-http-client": "^59.0.0",
-    "isomorphic-dompurify": "^0.27.0",
+    "ipfs-http-client": "^39.0.0",
+    "isomorphic-dompurify": "^2.28.0",
     "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
     "mysql2": "^3.9.8",
-    "node-cache": "^5.1.2",
     "nodemailer": "^6.10.1",
     "pdfkit": "^0.17.2",
     "prom-client": "^14.2.0",
@@ -61,13 +68,18 @@
     "@types/ws": "^8.5.10",
     "@typescript-eslint/eslint-plugin": "^6.10.0",
     "@typescript-eslint/parser": "^6.10.0",
+    "autocannon": "^7.15.0",
     "eslint": "^8.57.0",
     "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-jest": "^27.6.3",
     "jest": "^29.7.0",
     "supertest": "^7.1.4",
     "ts-jest": "^29.1.2",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.2"
+  },
+  "overrides": {
+    "jsrsasign": "^11.1.0"
   }
 }

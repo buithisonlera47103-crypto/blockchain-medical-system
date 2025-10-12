@@ -1,0 +1,152 @@
+{
+  "timestamp": "2025-10-10T17:04:40.258Z",
+  "testConfigs": [
+    {
+      "name": "健康检查端点 - 低负载",
+      "config": {
+        "name": "健康检查端点 - 低负载",
+        "endpoint": "/health",
+        "method": "GET",
+        "concurrency": 10,
+        "duration": 10000,
+        "headers": {}
+      },
+      "startTime": 1760115880289,
+      "endTime": 1760115890299,
+      "totalRequests": 9432,
+      "successCount": 9432,
+      "failedCount": 0,
+      "errors": {},
+      "tps": 942.2577422577423,
+      "avgResponseTime": 2.5435750636132317,
+      "minResponseTime": 0,
+      "maxResponseTime": 239,
+      "percentiles": {
+        "p50": 2,
+        "p75": 3,
+        "p90": 4,
+        "p95": 4,
+        "p99": 6
+      }
+    },
+    {
+      "name": "健康检查端点 - 中负载",
+      "config": {
+        "name": "健康检查端点 - 中负载",
+        "endpoint": "/health",
+        "method": "GET",
+        "concurrency": 50,
+        "duration": 10000,
+        "headers": {}
+      },
+      "startTime": 1760115895303,
+      "endTime": 1760115905316,
+      "totalRequests": 30064,
+      "successCount": 30064,
+      "failedCount": 0,
+      "errors": {},
+      "tps": 3002.4967542195145,
+      "avgResponseTime": 11.442821979776477,
+      "minResponseTime": -108,
+      "maxResponseTime": 238,
+      "percentiles": {
+        "p50": 10,
+        "p75": 13,
+        "p90": 17,
+        "p95": 22,
+        "p99": 34
+      }
+    },
+    {
+      "name": "健康检查端点 - 高负载",
+      "config": {
+        "name": "健康检查端点 - 高负载",
+        "endpoint": "/health",
+        "method": "GET",
+        "concurrency": 100,
+        "duration": 10000,
+        "headers": {}
+      },
+      "startTime": 1760115910326,
+      "endTime": 1760115920372,
+      "totalRequests": 28011,
+      "successCount": 28011,
+      "failedCount": 0,
+      "errors": {},
+      "tps": 2788.273939876568,
+      "avgResponseTime": 30.505658491306985,
+      "minResponseTime": 6,
+      "maxResponseTime": 182,
+      "percentiles": {
+        "p50": 27,
+        "p75": 35,
+        "p90": 50,
+        "p95": 55,
+        "p99": 82
+      }
+    },
+    {
+      "name": "Fabric状态查询 - 中负载",
+      "config": {
+        "name": "Fabric状态查询 - 中负载",
+        "endpoint": "/api/v1/fabric/status",
+        "method": "GET",
+        "concurrency": 20,
+        "duration": 10000,
+        "headers": {}
+      },
+      "startTime": 1760115925378,
+      "endTime": 1760115935383,
+      "totalRequests": 17540,
+      "successCount": 17540,
+      "failedCount": 0,
+      "errors": {},
+      "tps": 1753.1234382808595,
+      "avgResponseTime": 5.313169897377423,
+      "minResponseTime": 0,
+      "maxResponseTime": 167,
+      "percentiles": {
+        "p50": 5,
+        "p75": 6,
+        "p90": 8,
+        "p95": 12,
+        "p99": 26
+      }
+    },
+    {
+      "name": "API健康检查 - 高负载",
+      "config": {
+        "name": "API健康检查 - 高负载",
+        "endpoint": "/api/v1/health",
+        "method": "GET",
+        "concurrency": 100,
+        "duration": 15000,
+        "headers": {}
+      },
+      "startTime": 1760115940384,
+      "endTime": 1760115955422,
+      "totalRequests": 43011,
+      "successCount": 43011,
+      "failedCount": 0,
+      "errors": {},
+      "tps": 2860.154275834552,
+      "avgResponseTime": 29.88795889423636,
+      "minResponseTime": 0,
+      "maxResponseTime": 1329,
+      "percentiles": {
+        "p50": 26,
+        "p75": 32,
+        "p90": 48,
+        "p95": 53,
+        "p99": 70
+      }
+    }
+  ],
+  "summary": {
+    "maxTPS": 3002.4967542195145,
+    "avgTPS": 2269.2612300938476,
+    "totalRequests": 128058,
+    "totalSuccess": 128058,
+    "totalFailed": 0
+  }
+}

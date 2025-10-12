@@ -2,6 +2,8 @@
  * 中间件模块 - 错误处理、日志记录等
  */
 
+import crypto from 'crypto';
+
 import { Request, Response, NextFunction } from 'express';
 
 import { logger } from '../utils/logger';
@@ -195,12 +197,14 @@ export const corsOptions = {
 /**
  * 安全头部中间件配置
  */
+
+
 export const helmetOptions = {
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
+      styleSrc: ["'self'"],
+      scriptSrc: ["'self'", (_req: Request, res: Response): string => { const v = (res.locals as Record<string, unknown>)['cspNonce']; return `nonce-${typeof v === 'string' ? v : ''}`; }],
       imgSrc: ["'self'", 'data:', 'https:'],
       connectSrc: ["'self'"],
       fontSrc: ["'self'"],
@@ -248,5 +252,16 @@ export const healthCheck = (_req: Request, res: Response): void => {
   res.status(200).json(healthStatus);
 };
 
-// Export logger for use in other modules
+export const generateCspNonce = (_req: Request, res: Response, next: NextFunction): void => {
+  try {
+    const nonce = crypto.randomBytes(16).toString('base64');
+    Object.assign(res.locals as Record<string, unknown>, { cspNonce: nonce });
+    res.setHeader('X-CSP-Nonce', nonce);
+  } catch {
+    // ignore errors, proceed without nonce
+  }
+  next();
+};
+
+// Export logger and helpers for use in other modules
 export { logger };

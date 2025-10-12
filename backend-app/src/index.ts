@@ -28,8 +28,10 @@ import {
   healthCheck,
   logger,
   helmetOptions,
+  generateCspNonce,
 } from './middleware';
 import abacEnforce from './middleware/abac';
+import { asyncHandler } from './middleware/asyncHandler';
 import {
   requestIdMiddleware,
   errorHandler,
@@ -73,7 +75,9 @@ import { BlockchainService } from './services/BlockchainService';
 import { BridgeService } from './services/BridgeService';
 import { cacheService } from './services/CacheService';
 import { CryptographyService } from './services/CryptographyService';
+import { ExternalIntegrationService } from './services/ExternalIntegrationService';
 import { FabricDiagnosticsService } from './services/FabricDiagnosticsService';
+import type { FabricStatusResponse } from './services/FabricDiagnosticsService';
 import { FabricServiceAdapter } from './services/FabricServiceAdapter';
 import { IPFSService } from './services/IPFSService';
 import { MedicalRecordService } from './services/MedicalRecordService';
@@ -82,7 +86,6 @@ import MetricsService from './services/MetricsService';
 import { MigrationService } from './services/MigrationService';
 import { SocketService } from './services/SocketService';
 import { TLSConfigService } from './services/TLSConfigService';
-import { ExternalIntegrationService } from './services/ExternalIntegrationService';
 import { resourceCleanupManager } from './utils/ResourceCleanupManager';
 // 加载环境变量
 dotenvConfig();
@@ -200,7 +203,7 @@ app.get('/fabricz/contract-info', (_req, res) => {
 });
 
   // Fast chaincode query endpoint (no heavy middlewares): GetAllAssets
-  app.get('/fabricz/assets', async (_req, res) => {
+  app.get('/fabricz/assets', asyncHandler(async (_req, res) => {
     try {
       const bc = BlockchainService.getInstance(logger);
       const conn = bc.getConnectionStatus();
@@ -214,25 +217,25 @@ app.get('/fabricz/contract-info', (_req, res) => {
           ]);
         } finally { if (t) clearTimeout(t); }
       };
-      const r = await withTimeout(
-        (bc.evaluateTransaction('GetAllAssets') as unknown as Promise<any>),
-        4000,
-        { success: false, error: 'TIMEOUT' } as any
-      );
-      if ((r as any).success) {
+      type EvalResult = { success: boolean; data?: string; error?: string };
+      const evalPromise = Promise.resolve(bc.evaluateTransaction('GetAllAssets')) as Promise<unknown>;
+      const rUnknown = await withTimeout<unknown>(evalPromise, 4000, { success: false, error: 'TIMEOUT' } as const);
+      const isEvalResult = (x: unknown): x is EvalResult => typeof x === 'object' && x !== null && 'success' in x;
+      if (isEvalResult(rUnknown) && rUnknown.success) {
         try {
-          const data = JSON.parse((r as any).data ?? '[]');
+          const data = JSON.parse(rUnknown.data ?? '[]');
           res.status(200).json({ success: true, chaincode: conn.config.chaincodeName, channel: conn.config.channelName, data, timestamp: new Date().toISOString() });
         } catch {
-          res.status(200).json({ success: true, chaincode: conn.config.chaincodeName, channel: conn.config.channelName, raw: (r as any).data, timestamp: new Date().toISOString() });
+          res.status(200).json({ success: true, chaincode: conn.config.chaincodeName, channel: conn.config.channelName, raw: rUnknown.data, timestamp: new Date().toISOString() });
         }
       } else {
-        res.status(200).json({ success: false, error: (r as any).error ?? 'UNKNOWN', timestamp: new Date().toISOString() });
+        const err = isEvalResult(rUnknown) ? (rUnknown.error ?? 'UNKNOWN') : 'UNKNOWN';
+        res.status(200).json({ success: false, error: err, timestamp: new Date().toISOString() });
       }
     } catch (e) {
       res.status(200).json({ success: false, error: (e as Error)?.message ?? String(e), timestamp: new Date().toISOString() });
     }
-  });
+  }));
 
 
 app.get('/fabricz/test', (_req, res) => {
@@ -242,10 +245,8 @@ app.get('/fabricz/test', (_req, res) => {
 
     // Schedule background connectivity + light query without blocking
     fastBackground(async () => {
-      const c = await bc.ensureConnection();
-      if ((c as any).success) {
-        await bc.getContractInfo().catch(() => undefined);
-      }
+      await bc.ensureConnection().catch(() => undefined);
+      await bc.getContractInfo().catch(() => undefined);
     });
 
     res.status(200).json({ status: 'queued', results: { connection: conn.isConnected, chaincode: false, error: null }, timestamp: new Date().toISOString() });
@@ -278,6 +279,8 @@ app.use((_req, res, next) => {
 // 应用测试环境安全中间件（放宽速率限制）
 TestSecurityConfig.configureTestSecurity(app);
 
+// CSP Nonce 注入，必须在 Helmet 之前
+app.use(generateCspNonce);
 // 安全头（Helmet）
 app.use(helmet(helmetOptions));
 app.disable('x-powered-by');
@@ -301,12 +304,12 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // 请求大小验证
 app.use(validateRequestSize);
 
-// 全局API速率限制
-const enableRateLimit = (process.env.ENABLE_RATE_LIMIT ?? 'true').toLowerCase() === 'true';
+// 全局API速率限制（测试环境默认禁用，避免干扰用例）
+const enableRateLimit = (process.env.NODE_ENV !== 'test') && ((process.env.ENABLE_RATE_LIMIT ?? 'true').toLowerCase() === 'true');
 if (enableRateLimit) {
   app.use(apiRateLimit);
 } else {
-  logger.info('Rate limiting disabled via ENABLE_RATE_LIMIT=false (benchmarks/dev only)');
+  logger.info('Rate limiting disabled (NODE_ENV=test or ENABLE_RATE_LIMIT=false)');
 }
 
 // 请求日志
@@ -385,10 +388,13 @@ app.get('/alerts', (_req, res) => {
   res.json({ alerts, count: alerts.length });
 });
 
-// API文档
-// Swagger UI 设置 - 使用类型断言避免类型冲突
-app.use('/api-docs', swaggerUi.serve as unknown as express.RequestHandler);
-app.get('/api-docs', swaggerUi.setup(swaggerSpec, swaggerUiOptions) as unknown as express.RequestHandler);
+// API文档（生产默认关闭，除非显式开启 SWAGGER_ENABLED=true）
+const enableSwagger = (process.env['NODE_ENV'] !== 'production') || ((process.env['SWAGGER_ENABLED'] ?? 'false').toLowerCase() === 'true');
+if (enableSwagger) {
+  // Swagger UI 设置 - 使用类型断言避免类型冲突
+  app.use('/api-docs', swaggerUi.serve as unknown as express.RequestHandler);
+  app.get('/api-docs', swaggerUi.setup(swaggerSpec, swaggerUiOptions) as unknown as express.RequestHandler);
+}
 
 // 路由配置
 app.use('/api/v1/auth', authRoutes);
@@ -435,6 +441,10 @@ app.use('/api/v1/fabric', fabricRoutes);
 // 分析路由
 app.use('/api/v1/analytics', analyticsRoutes);
 
+// 缓存管理路由
+import cacheRoutes from './routes/cache';
+app.use('/api/v1/cache', cacheRoutes);
+
 // 桥接路由
 app.use('/api/v1/bridge', bridgeRoutes);
 
@@ -468,15 +478,15 @@ app.use('/api/v1/monitoring', monitoringRoutes);
     res.status(200).json({ ok: true, ts: new Date().toISOString() });
   });
 
-  app.get('/fabricz/status', async (_req, res) => {
+  app.get('/fabricz/status', asyncHandler(async (_req, res) => {
     try {
       const diag = FabricDiagnosticsService.getInstance(logger);
       const bc = BlockchainService.getInstance(logger);
 
-      const fabricStatus = await withTimeout(
+      const fabricStatus = await withTimeout<FabricStatusResponse>(
         diag.getFabricStatus(false),
         4000,
-        () => {
+        (): FabricStatusResponse => {
           const last = diag.getLastReport();
           if (last) {
             return {
@@ -485,15 +495,26 @@ app.use('/api/v1/monitoring', monitoringRoutes);
               details: '快速路径：诊断超时超过阈值',
               timestamp: new Date().toISOString(),
               last_check: last.timestamp,
-              summary: last.summary,
+              summary: {
+                total_checks: last.summary.total_checks,
+                passed: last.summary.passed,
+                warnings: last.summary.warnings,
+                errors: last.summary.errors,
+              },
               critical_issues: [],
               recommendations: last.recommendations,
-            } as any;
+            };
           }
           return {
-            status: 'warning', message: '快速返回', details: '诊断超时', timestamp: new Date().toISOString(), last_check: 'N/A',
-            summary: { total_checks: 0, passed: 0, warnings: 0, errors: 0 }, critical_issues: [], recommendations: []
-          } as any;
+            status: 'warning',
+            message: '快速返回',
+            details: '诊断超时',
+            timestamp: new Date().toISOString(),
+            last_check: 'N/A',
+            summary: { total_checks: 0, passed: 0, warnings: 0, errors: 0 },
+            critical_issues: [],
+            recommendations: [],
+          };
         }
       );
 
@@ -506,37 +527,55 @@ app.use('/api/v1/monitoring', monitoringRoutes);
     } catch (e) {
       res.status(200).json({ status: 'error', message: (e as Error)?.message ?? String(e) });
     }
-  });
+  }));
 
-  app.get('/fabricz/contract-info', async (_req, res) => {
+  app.get('/fabricz/contract-info', asyncHandler(async (_req, res) => {
     const bc = BlockchainService.getInstance(logger);
-    const info = await withTimeout(
-      bc.getContractInfo(),
+    const infoUnknown = await withTimeout<unknown>(
+      Promise.resolve(bc.getContractInfo()),
       4000,
-      () => ({ success: false, error: 'TIMEOUT', message: 'contract-info timeout fast-return', timestamp: new Date().toISOString() }) as any
+      () => ({ success: false, error: 'TIMEOUT', message: 'contract-info timeout fast-return', timestamp: new Date().toISOString() })
     );
-    res.status(200).json(info);
-  });
+    res.status(200).json(infoUnknown);
+  }));
 
-  app.get('/fabricz/test', async (_req, res) => {
+  app.get('/fabricz/test', asyncHandler(async (_req, res) => {
     try {
       const bc = BlockchainService.getInstance(logger);
-      const conn = await withTimeout(bc.ensureConnection(), 4000, () => ({ success: false, error: 'TIMEOUT: ensureConnection' } as any));
+      type BasicResult = { success: boolean; error?: string };
+      const isBasicResult = (x: unknown): x is BasicResult => typeof x === 'object' && x !== null && 'success' in x;
+      const connUnknown = await withTimeout<unknown>(
+        Promise.resolve(bc.ensureConnection()),
+        4000,
+        () => ({ success: false, error: 'TIMEOUT: ensureConnection' })
+      );
+      let errMsg: string | null;
+      if (isBasicResult(connUnknown)) {
+        errMsg = connUnknown.success ? null : (connUnknown.error ?? 'connection timeout');
+      } else {
+        errMsg = 'connection timeout';
+      }
       const result: { connection: boolean; chaincode: boolean; error: string | null } = {
-        connection: !!(conn as any).success,
+        connection: isBasicResult(connUnknown) ? !!connUnknown.success : false,
         chaincode: false,
-        error: (conn as any).success ? null : ((conn as any).error ?? 'connection timeout')
+        error: errMsg,
       };
-      if ((conn as any).success) {
-        const q = await withTimeout(bc.getContractInfo(), 4000, () => ({ success: false, error: 'TIMEOUT: getContractInfo' } as any));
-        result.chaincode = !!(q as any).success;
-        if (!(q as any).success) result.error = (q as any).error ?? 'Unknown chaincode error';
+      if (isBasicResult(connUnknown) && connUnknown.success) {
+        const qUnknown = await withTimeout<unknown>(
+          Promise.resolve(bc.getContractInfo()),
+          4000,
+          () => ({ success: false, error: 'TIMEOUT: getContractInfo' })
+        );
+        if (isBasicResult(qUnknown)) {
+          result.chaincode = !!qUnknown.success;
+          if (!qUnknown.success) result.error = qUnknown.error ?? 'Unknown chaincode error';
+        }
       }
       res.status(200).json({ status: 'completed', results: result, timestamp: new Date().toISOString() });
     } catch (e) {
       res.status(200).json({ status: 'error', message: (e as Error)?.message ?? String(e) });
     }
-  });
+  }));
 
 // 添加健康检查路由
 app.get('/api/v1/health', healthCheck);
@@ -781,7 +820,8 @@ async function initializeServices(): Promise<void> {
 wss.on('connection', (ws, req): void => {
   const clientIp = req.socket.remoteAddress;
   const url = req.url || '';
-  logger.info(`WebSocket客户端连接: ${clientIp}${url ? ` ${url}` : ''}`);
+  const urlSuffix = url ? ` ${url}` : '';
+  logger.info(`WebSocket客户端连接: ${clientIp}${urlSuffix}`);
 
   // 发送欢迎消息
   ws.send(
@@ -815,7 +855,14 @@ wss.on('connection', (ws, req): void => {
   // 处理客户端消息
   ws.on('message', (data: unknown): void => {
     try {
-      const message = JSON.parse(String(data));
+      let raw: string;
+      if (typeof data === 'string') raw = data;
+      else if (Buffer.isBuffer(data)) raw = data.toString('utf8');
+      else {
+        try { raw = JSON.stringify(data); }
+        catch { raw = '"[unserializable]"'; }
+      }
+      const message = JSON.parse(raw);
       logger.info('收到WebSocket消息', { message, clientIp });
 
       // 处理不同类型的消息

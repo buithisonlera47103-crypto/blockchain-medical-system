@@ -2,8 +2,11 @@
  * JWT认证中间件
  */
 
+import * as fs from 'fs';
+
 import { Response, NextFunction } from 'express';
 import { verify } from 'jsonwebtoken';
+
 
 import {
   BaseUser,
@@ -17,8 +20,18 @@ import {
 export { AuthenticatedRequest };
 
 
-// Lightweight JWT verification cache (L1) to reduce repeated signature checks
+// Lightweight LRU+TTL cache for JWT verification results to avoid unbounded memory
+const TOKEN_CACHE_MAX = Math.max(10000, parseInt(String(process.env["AUTH_TOKEN_CACHE_MAX"] ?? '10000'), 10));
+const TOKEN_CACHE_SKEW_MS = 500; // safety margin
 const tokenCache = new Map<string, { payload: JWTPayload; expMs: number }>();
+function evictIfNeeded(): void {
+  while (tokenCache.size > TOKEN_CACHE_MAX) {
+    // Evict least-recently used (first inserted)
+    const firstKey = tokenCache.keys().next().value as string | undefined;
+    if (!firstKey) break;
+    tokenCache.delete(firstKey);
+  }
+}
 function cacheGet(token: string): JWTPayload | null {
   const entry = tokenCache.get(token);
   if (!entry) return null;
@@ -26,15 +39,18 @@ function cacheGet(token: string): JWTPayload | null {
     tokenCache.delete(token);
     return null;
   }
+  // refresh LRU order
+  tokenCache.delete(token);
+  tokenCache.set(token, entry);
   return entry.payload;
 }
 function cacheSet(token: string, payload: JWTPayload): void {
   const expSec = typeof (payload as unknown as { exp?: number }).exp === 'number'
     ? (payload as unknown as { exp?: number }).exp
     : Math.floor(Date.now() / 1000) + 30; // default 30s cache
-  const expMs = expSec * 1000;
-  // Add small safety margin
-  tokenCache.set(token, { payload, expMs: expMs - 500 });
+  const expMs = expSec * 1000 - TOKEN_CACHE_SKEW_MS;
+  tokenCache.set(token, { payload, expMs });
+  evictIfNeeded();
 }
 
 
@@ -101,14 +117,19 @@ export function authenticateToken(
   }
 
   try {
-    const jwtSecretEnv = process.env['JWT_SECRET'];
-    const jwtSecret = jwtSecretEnv != null && String(jwtSecretEnv).trim() !== ''
-      ? String(jwtSecretEnv)
-      : 'your-secret-key';
+    const pub = process.env['JWT_PUBLIC_KEY'];
+    const pubPath = process.env['JWT_PUBLIC_KEY_PATH'];
+    let publicKey: string | undefined = (pub && pub.trim() !== '') ? pub : undefined;
+    if (!publicKey && pubPath && pubPath.trim() !== '') {
+      try { publicKey = fs.readFileSync(pubPath, 'utf8'); } catch { void 0; }
+    }
+    if (!publicKey) {
+      throw new Error('SERVER_MISCONFIGURED: missing JWT_PUBLIC_KEY or JWT_PUBLIC_KEY_PATH');
+    }
 
     let decoded = cacheGet(token);
     if (!decoded) {
-      decoded = verify(token, jwtSecret) as JWTPayload;
+      decoded = verify(token, publicKey, { algorithms: ['RS256'] }) as JWTPayload;
       cacheSet(token, decoded);
     }
 
@@ -140,7 +161,6 @@ export function authenticateToken(
     return;
   } catch (error) {
     console.error('Token verification failed:', {
-      token: `${token.substring(0, 20)}...`,
       error: error instanceof Error ? error.message : String(error),
     });
     res.status(403).json({
@@ -185,14 +205,19 @@ export function optionalAuth(req: AuthenticatedRequest, _res: Response, next: Ne
 
   if (token) {
     try {
-      const jwtSecretEnv = process.env['JWT_SECRET'];
-      const jwtSecret = jwtSecretEnv != null && String(jwtSecretEnv).trim() !== ''
-        ? String(jwtSecretEnv)
-        : 'your-secret-key';
+      const pub = process.env['JWT_PUBLIC_KEY'];
+      const pubPath = process.env['JWT_PUBLIC_KEY_PATH'];
+      let publicKey: string | undefined = (pub && pub.trim() !== '') ? pub : undefined;
+      if (!publicKey && pubPath && pubPath.trim() !== '') {
+        try { publicKey = fs.readFileSync(pubPath, 'utf8'); } catch { void 0; }
+      }
+      if (!publicKey) {
+        return next();
+      }
 
       let decoded = cacheGet(token);
       if (!decoded) {
-        decoded = verify(token, jwtSecret) as JWTPayload;
+        decoded = verify(token, publicKey, { algorithms: ['RS256'] }) as JWTPayload;
         cacheSet(token, decoded);
       }
 
@@ -225,7 +250,7 @@ export function optionalAuth(req: AuthenticatedRequest, _res: Response, next: Ne
     }
   }
 
-  next();
+  return next();
 }
 
 // Backward-compatible role-specific helpers used by some tests

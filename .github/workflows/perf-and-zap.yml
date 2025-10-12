@@ -3,7 +3,7 @@ name: 性能基线与ZAP扫描 (Performance Baseline and ZAP Scans)
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, ci-perf-zap-setup ]
   pull_request:
     branches: [ main, master ]
 

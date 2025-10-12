@@ -18,16 +18,16 @@ export interface FHIRPatient {
   identifier: Array<{
     system: string;
     value: string;
-  }>;
+  }>,
   active: boolean;
   name: Array<{
     family: string;
     given: string[];
-  }>;
+  }>,
   telecom?: Array<{
     system: string;
     value: string;
-  }>;
+  }>,
   gender: 'male' | 'female' | 'other' | 'unknown';
   birthDate: string;
   address?: Array<{
@@ -36,24 +36,24 @@ export interface FHIRPatient {
     state: string;
     postalCode: string;
     country: string;
-  }>;
+  }>,
   contact?: Array<{
     relationship: Array<{
       coding: Array<{
         system: string;
         code: string;
         display: string;
-      }>;
-    }>;
-    name?: {
+      }>,
+}>,
+  name?: {
       family: string;
       given: string[];
     };
     telecom?: Array<{
       system: string;
       value: string;
-    }>;
-  }>;
+    }>,
+}>;
 }
 
 export interface FHIRDiagnosticReport {
@@ -62,10 +62,10 @@ export interface FHIRDiagnosticReport {
   identifier?: Array<{
     system: string;
     value: string;
-  }>;
+  }>,
   basedOn?: Array<{
     reference: string;
-  }>;
+  }>,
   status:
     | 'registered'
     | 'partial'
@@ -82,15 +82,15 @@ export interface FHIRDiagnosticReport {
       system: string;
       code: string;
       display: string;
-    }>;
-  }>;
+    }>,
+}>,
   code: {
     coding: Array<{
       system: string;
       code: string;
       display: string;
-    }>;
-    text?: string;
+    }>,
+  text?: string;
   };
   subject: {
     reference: string;
@@ -108,7 +108,7 @@ export interface FHIRDiagnosticReport {
   performer?: Array<{
     reference: string;
     display?: string;
-  }>;
+  }>,
   result?: Array<{
     reference: string;
     display?: string;
@@ -128,8 +128,8 @@ export interface FHIRDiagnosticReport {
       system: string;
       code: string;
       display: string;
-    }>;
-  }>;
+    }>,
+}>;
 }
 
 export interface FHIRObservation {
@@ -138,7 +138,7 @@ export interface FHIRObservation {
   identifier?: Array<{
     system: string;
     value: string;
-  }>;
+  }>,
   status:
     | 'registered'
     | 'preliminary'
@@ -153,15 +153,15 @@ export interface FHIRObservation {
       system: string;
       code: string;
       display: string;
-    }>;
-  }>;
+    }>,
+}>,
   code: {
     coding: Array<{
       system: string;
       code: string;
       display: string;
-    }>;
-    text?: string;
+    }>,
+  text?: string;
   };
   subject: {
     reference: string;
@@ -179,7 +179,7 @@ export interface FHIRObservation {
   performer?: Array<{
     reference: string;
     display?: string;
-  }>;
+  }>,
   valueQuantity?: {
     value: number;
     unit: string;
@@ -202,13 +202,13 @@ export interface FHIRObservation {
       system: string;
       code: string;
       display: string;
-    }>;
-  }>;
+    }>,
+}>,
   note?: Array<{
     text: string;
     time?: string;
     authorString?: string;
-  }>;
+  }>,
   referenceRange?: Array<{
     low?: {
       value: number;
@@ -223,10 +223,10 @@ export interface FHIRObservation {
         system: string;
         code: string;
         display: string;
-      }>;
-    };
+      }>,
+};
     text?: string;
-  }>;
+  }>,
 }
 
 // FHIR 搜索参数
@@ -267,14 +267,14 @@ export interface FHIRBundle {
   link?: Array<{
     relation: 'self' | 'first' | 'previous' | 'next' | 'last';
     url: string;
-  }>;
+  }>,
   entry?: Array<{
     fullUrl: string;
     resource: FHIRPatient | FHIRDiagnosticReport | FHIRObservation;
     search?: {
       mode: 'match' | 'include' | 'outcome';
     };
-  }>;
+  }>,
 }
 
 export class FHIRService {

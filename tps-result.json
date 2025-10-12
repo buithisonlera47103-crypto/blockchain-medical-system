@@ -1,0 +1,15 @@
+{
+  "timestamp": "2025-10-10T17:41:26+08:00",
+  "results": {
+    "read_tps": 423,
+    "auth_tps": 5,
+    "query_tps": 475,
+    "write_tps": 121,
+    "mixed_tps": 369,
+    "concurrent_tps": 2000,
+    "average_tps": 565
+  },
+  "target": 100,
+  "grade": "A+",
+  "status": "PASS"
+}

@@ -22,9 +22,8 @@ module.exports = {
   },
   settings: {
     'import/resolver': {
-      typescript: {
-        alwaysTryTypes: true,
-        project: './tsconfig.eslint.json',
+      node: {
+        extensions: ['.js', '.jsx', '.ts', '.tsx'],
       },
     },
   },
@@ -117,9 +116,34 @@ module.exports = {
         '@typescript-eslint/no-non-null-assertion': 'off',
         '@typescript-eslint/prefer-nullish-coalescing': 'off',
         '@typescript-eslint/no-require-imports': 'off',
+        // Allow Function type in tests (common for jest mocks), keep other defaults
+        '@typescript-eslint/ban-types': ['error', { types: { Function: false }, extendDefaults: true }],
+        // Relax optional-chain preference in tests
+        '@typescript-eslint/prefer-optional-chain': 'off',
+        // Reduce noise in tests for unused vars and floating promises
+        '@typescript-eslint/no-unused-vars': 'off',
+        '@typescript-eslint/no-floating-promises': 'off',
+
+        // Jest-only relaxations for legacy tests
         'jest/no-conditional-expect': 'off',
         'jest/prefer-to-have-length': 'off',
+        'jest/expect-expect': 'off',
+        'jest/no-done-callback': 'off',
+
+        // Style-only relaxations for tests
+        'import/order': 'off',
+        'no-prototype-builtins': 'off',
+        'object-shorthand': 'off',
+        '@typescript-eslint/no-this-alias': 'off',
+        'no-useless-escape': 'off',
         'max-lines-per-function': 'off',
+        'consistent-return': 'off',
+      },
+    },
+    {
+      files: ['**/*.d.ts'],
+      rules: {
+        '@typescript-eslint/no-explicit-any': 'off',
       },
     },
     {

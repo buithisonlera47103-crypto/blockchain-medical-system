@@ -1,0 +1,365 @@
+/**
+ * 主题CSS变量 - 亮色专业医疗主题
+ * 信息安全竞赛版
+ */
+
+:root {
+  /* ==================== 主色调 ==================== */
+  --primary-color: #1890ff;
+  --success-color: #52c41a;
+  --warning-color: #faad14;
+  --danger-color: #f5222d;
+  --purple-color: #722ed1;
+  --cyan-color: #13c2c2;
+  --orange-color: #fa8c16;
+  --pink-color: #eb2f96;
+
+  /* ==================== 背景色 ==================== */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f0f2f5;
+  --bg-tertiary: #fafafa;
+  --bg-hover: #e6f7ff;
+  --bg-active: #bae7ff;
+
+  /* ==================== 文字色 ==================== */
+  --text-primary: #262626;
+  --text-secondary: #595959;
+  --text-disabled: #bfbfbf;
+  --text-light: #8c8c8c;
+
+  /* ==================== 边框色 ==================== */
+  --border-color: #d9d9d9;
+  --border-light: #f0f0f0;
+  --border-dark: #434343;
+
+  /* ==================== 阴影 ==================== */
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.06);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+  --shadow-xl: 0 12px 32px rgba(0,0,0,0.16);
+
+  /* ==================== 动画 ==================== */
+  --transition-fast: 0.2s ease-in-out;
+  --transition-base: 0.3s ease-in-out;
+  --transition-slow: 0.5s ease-in-out;
+
+  /* ==================== 圆角 ==================== */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* ==================== 间距 ==================== */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-xxl: 48px;
+
+  /* ==================== 字体 ==================== */
+  --font-xs: 12px;
+  --font-sm: 14px;
+  --font-base: 16px;
+  --font-lg: 18px;
+  --font-xl: 20px;
+  --font-xxl: 24px;
+  --font-xxxl: 32px;
+
+  /* ==================== 布局 ==================== */
+  --sider-width: 180px;
+  --sider-collapsed-width: 64px;
+  --header-height: 64px;
+
+  /* ==================== 功能色 ==================== */
+  --color-records: #1890ff;
+  --color-permissions: #52c41a;
+  --color-verify: #722ed1;
+  --color-logs: #fa8c16;
+  --color-upload: #13c2c2;
+  --color-audit: #eb2f96;
+}
+
+/* ==================== 全局样式 ==================== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: var(--font-sm);
+  color: var(--text-primary);
+  background-color: var(--bg-secondary);
+  line-height: 1.5715;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  height: 100%;
+}
+
+/* ==================== 滚动条样式 ==================== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #bfbfbf;
+}
+
+/* ==================== 选择文本样式 ==================== */
+::selection {
+  background-color: var(--bg-active);
+  color: var(--primary-color);
+}
+
+/* ==================== 通用工具类 ==================== */
+.medical-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--spacing-lg);
+}
+
+.medical-card {
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-base);
+}
+
+.medical-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.medical-card-title {
+  font-size: var(--font-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-md);
+}
+
+/* ==================== 按钮样式 ==================== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  outline: none;
+}
+
+.btn-primary {
+  background: var(--primary-color);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #40a9ff;
+  box-shadow: 0 2px 4px rgba(24,144,255,0.3);
+}
+
+.btn-success {
+  background: var(--success-color);
+  color: white;
+}
+
+.btn-success:hover {
+  background: #73d13d;
+  box-shadow: 0 2px 4px rgba(82,196,26,0.3);
+}
+
+.btn-danger {
+  background: var(--danger-color);
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #ff4d4f;
+  box-shadow: 0 2px 4px rgba(245,34,45,0.3);
+}
+
+/* ==================== 徽章样式 ==================== */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: var(--font-xs);
+  font-weight: 500;
+}
+
+.badge-primary {
+  background: #e6f7ff;
+  color: var(--primary-color);
+}
+
+.badge-success {
+  background: #f6ffed;
+  color: var(--success-color);
+}
+
+.badge-warning {
+  background: #fffbe6;
+  color: var(--warning-color);
+}
+
+.badge-danger {
+  background: #fff1f0;
+  color: var(--danger-color);
+}
+
+.badge-purple {
+  background: #f9f0ff;
+  color: var(--purple-color);
+}
+
+/* ==================== 加载动画 ==================== */
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.spinner {
+  border: 3px solid var(--border-light);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  animation: spin 0.8s linear infinite;
+}
+
+/* ==================== 淡入动画 ==================== */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn var(--transition-base) ease-out;
+}
+
+/* ==================== 滑入动画 ==================== */
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.slide-in-right {
+  animation: slideInRight var(--transition-base) ease-out;
+}
+
+/* ==================== 区块链标识 ==================== */
+.blockchain-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  background: linear-gradient(135deg, #722ed1, #9254de);
+  color: white;
+  border-radius: 12px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(114,46,209,0.3);
+}
+
+.blockchain-badge::before {
+  content: '🔗';
+  font-size: 14px;
+}
+
+/* ==================== 安全标识 ==================== */
+.security-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  background: linear-gradient(135deg, #52c41a, #73d13d);
+  color: white;
+  border-radius: 12px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(82,196,26,0.3);
+}
+
+.security-badge::before {
+  content: '🔐';
+  font-size: 14px;
+}
+
+/* ==================== 审计标识 ==================== */
+.audit-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  background: linear-gradient(135deg, #fa8c16, #ffa940);
+  color: white;
+  border-radius: 12px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(250,140,22,0.3);
+}
+
+.audit-badge::before {
+  content: '📊';
+  font-size: 14px;
+}
+
+/* ==================== 响应式 ==================== */
+@media (max-width: 768px) {
+  :root {
+    --sider-width: 64px;
+    --font-base: 14px;
+  }
+
+  .medical-container {
+    padding: var(--spacing-md);
+  }
+
+  .medical-card {
+    padding: var(--spacing-md);
+  }
+}
+

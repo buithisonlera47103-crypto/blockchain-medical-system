@@ -98,16 +98,16 @@ router.get('/status', asyncHandler(async (_req: Request, res: Response) => {
         },
         connection: {
           retries: connectionStatus.retries,
-          lastCheck: (fabricStatus as any).last_check ?? (fabricStatus as any).timestamp,
-          details: (fabricStatus as any).details,
+          lastCheck: (fabricStatus as Record<string, unknown>).last_check ?? (fabricStatus as Record<string, unknown>).timestamp,
+          details: (fabricStatus as Record<string, unknown>).details,
         },
-        diagnostics: { summary: (fabricStatus as any).summary, recommendations: (fabricStatus as any).recommendations },
+        diagnostics: { summary: (fabricStatus as Record<string, unknown>).summary, recommendations: (fabricStatus as Record<string, unknown>).recommendations },
       },
       timestamp: new Date().toISOString(),
     } as const;
 
     // 永不超时，统一返回200（状态字段表达健康度），符合“命令不超时且成功返回”的要求
-    logger.info('Fabric状态查询完成(快速返回)', { status: (fabricStatus as any).status });
+    logger.info('Fabric状态查询完成(快速返回)', { status: (fabricStatus as Record<string, unknown>).status });
     res.status(200).json(response);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -247,29 +247,29 @@ router.get('/test', asyncHandler(async (_req: Request, res: Response) => {
     const blockchainService = BlockchainService.getInstance(logger);
 
     // 确保连接（加超时保护）
-    const connectionResult = await withTimeout(
+    const connectionResult = await withTimeout<{ success: boolean; error?: string }>(
       blockchainService.ensureConnection(),
       4000,
-      () => ({ success: false, error: 'TIMEOUT: ensureConnection' } as any)
+      () => ({ success: false, error: 'TIMEOUT: ensureConnection' })
     );
 
     // 测试链码调用（整体不阻塞返回）
     const testResults = {
-      connection: !!(connectionResult as any).success,
+      connection: !!(connectionResult).success,
       chaincode: false,
-      error: (connectionResult as any).success ? null : ((connectionResult as any).error ?? 'connection timeout'),
+      error: (connectionResult).success ? null : ((connectionResult).error ?? 'connection timeout'),
     } as { connection: boolean; chaincode: boolean; error: string | null };
 
-    if ((connectionResult as any).success) {
+    if ((connectionResult).success) {
       try {
-        const queryResult = await withTimeout(
+        const queryResult = await withTimeout<{ success: boolean; error?: string }>(
           blockchainService.getAllRecords(),
           4000,
-          () => ({ success: false, error: 'TIMEOUT: getAllRecords' } as any)
+          () => ({ success: false, error: 'TIMEOUT: getAllRecords' })
         );
-        testResults.chaincode = !!(queryResult as any).success;
-        if (!(queryResult as any).success) {
-          testResults.error = (queryResult as any).error ?? 'Unknown chaincode error';
+        testResults.chaincode = !!(queryResult).success;
+        if (!(queryResult).success) {
+          testResults.error = (queryResult).error ?? 'Unknown chaincode error';
         }
       } catch (chaincodeError) {
         const errorMessage = chaincodeError instanceof Error ? chaincodeError.message : String(chaincodeError);
@@ -498,21 +498,21 @@ router.post('/optimization/batch', asyncHandler(async (req: Request, res: Respon
 router.get('/assets', asyncHandler(async (_req: Request, res: Response) => {
   const bc = BlockchainService.getInstance(logger);
   try {
-    const result = await withTimeout(
+    const result = await withTimeout<{ success: boolean; data?: string; error?: string; message?: string; timestamp?: string }>(
       bc.evaluateTransaction('GetAllAssets'),
       4000,
-      () => ({ success: false, error: 'TIMEOUT', message: 'assets query timeout fast-return', timestamp: new Date().toISOString() } as unknown as any)
+      () => ({ success: false, error: 'TIMEOUT', message: 'assets query timeout fast-return', timestamp: new Date().toISOString() })
     );
     // 统一200返回，使用success表达是否成功
-    if ((result as any).success) {
+    if ((result).success) {
       try {
-        const data = JSON.parse((result as any).data ?? '[]');
+        const data = JSON.parse((result).data ?? '[]');
         return res.status(200).json({ success: true, data, timestamp: new Date().toISOString() });
       } catch {
-        return res.status(200).json({ success: true, raw: (result as any).data, timestamp: new Date().toISOString() });
+        return res.status(200).json({ success: true, raw: (result).data, timestamp: new Date().toISOString() });
       }
     }
-    return res.status(200).json({ success: false, error: (result as any).error ?? 'UNKNOWN', timestamp: new Date().toISOString() });
+    return res.status(200).json({ success: false, error: (result).error ?? 'UNKNOWN', timestamp: new Date().toISOString() });
   } catch (e) {
     return res.status(200).json({ success: false, error: (e as Error)?.message ?? String(e), timestamp: new Date().toISOString() });
   }
@@ -520,10 +520,10 @@ router.get('/assets', asyncHandler(async (_req: Request, res: Response) => {
 
 router.get('/contract-info', asyncHandler(async (_req: Request, res: Response) => {
   const bc = BlockchainService.getInstance(logger);
-  const info = await withTimeout(
+  const info = await withTimeout<{ success: boolean; error?: string; message?: string; timestamp?: string }>(
     bc.getContractInfo(),
     4000,
-    () => ({ success: false, error: 'TIMEOUT', message: 'contract-info timeout fast-return', timestamp: new Date().toISOString() } as unknown as any)
+    () => ({ success: false, error: 'TIMEOUT', message: 'contract-info timeout fast-return', timestamp: new Date().toISOString() })
   );
   // Always reply 200 to avoid client timeouts; embed success flag
   res.status(200).json(info);

@@ -37,7 +37,7 @@ const getMySQLConfig = (): MySQLConfig => {
     port: parseInt(process.env['MYSQL_PORT'] ?? process.env['DB_PORT'] ?? '3306', 10),
     user: process.env['MYSQL_USER'] ?? process.env['DB_USER'] ?? 'root',
     password: process.env['MYSQL_PASSWORD'] ?? process.env['DB_PASSWORD'] ?? 'password',
-    database: process.env['MYSQL_DATABASE'] ?? process.env['DB_NAME'] ?? 'emr_blockchain',
+    database: process.env['MYSQL_DATABASE'] ?? process.env['DB_NAME'] ?? 'blockchain_emr',
     connectionLimit: parseInt(process.env['DB_POOL_MAX'] ?? '10', 10),
     acquireTimeout: parseInt(process.env['DB_POOL_ACQUIRE'] ?? '30000', 10),
     timeout: parseInt(process.env['DB_TIMEOUT'] ?? '30000', 10),

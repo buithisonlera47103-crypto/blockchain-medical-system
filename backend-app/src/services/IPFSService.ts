@@ -55,6 +55,7 @@ import { logger } from '../utils/logger';
 import { resourceCleanupManager } from '../utils/ResourceCleanupManager';
 
 import { IPFSClusterService } from './IPFSClusterService';
+import MetricsService from './MetricsService';
 
 // Production cluster configuration interface
 export interface IPFSProductionConfig {
@@ -95,6 +96,8 @@ export class IPFSService {
   private ipfs?: IPFSClient; // IPFSHTTPClient (typed minimally)
   private readonly chunkSize: number;
   private readonly defaultEncryptionKey: string;
+  private readonly requireDataKey: boolean;
+
   private readonly cluster?: IPFSClusterService;
   private productionConfig?: IPFSProductionConfig;
   private healthCheckInterval?: NodeJS.Timeout;
@@ -107,15 +110,25 @@ export class IPFSService {
   private currentNodeIndex: number = 0;
   // private _connectionPool: Map<string, unknown> = new Map(); // Reserved for connection pooling
 
+  // Connectivity monitoring/backoff
+  private heartbeatInterval?: NodeJS.Timeout;
+  private hbInProgress = false;
+  private ipfsRetries = 0;
+  private readonly ipfsMaxRetries = 5;
+  private readonly ipfsRetryDelayMs = 2000;
+  private readonly metrics = MetricsService.getInstance();
+
 
   constructor() {
     // 设置分片大小为256KB（read111.md要求）
     this.chunkSize = 256 * 1024; // 256KB chunks as specified in read111.md
 
-    // 获取默认加密密钥，确保32字节长度（用于未提供数据密钥的场景）
+    // 获取默认加密密钥（若未提供则禁用默认密钥，生产环境需显式 dataKey）
     const envKey = process.env["ENCRYPTION_KEY"];
-    const key = typeof envKey === 'string' && envKey.trim() !== '' ? envKey : 'medical-record-default-key-32b!';
-    this.defaultEncryptionKey = key.padEnd(32, '0').substring(0, 32);
+    this.defaultEncryptionKey = (typeof envKey === 'string' && envKey.trim() !== '')
+      ? envKey.padEnd(32, '0').substring(0, 32)
+      : '';
+    this.requireDataKey = (String(process.env["REQUIRE_DATAKEY"] ?? (process.env["NODE_ENV"] === 'production' ? 'true' : 'false'))).toLowerCase() === 'true';
 
     // Reserved properties - intentionally unused for now
 
@@ -125,6 +138,10 @@ export class IPFSService {
       // explicitly ignored background init
       void this.initializeIPFS();
     });
+
+    // Start lightweight heartbeat (works for both single-node and cluster mode)
+    const hbSec = Math.max(10, parseInt(process.env["IPFS_HEARTBEAT_SEC"] ?? '45', 10));
+    this.startHeartbeat(hbSec);
 
     // 可选初始化 Cluster 服务
     try {
@@ -203,9 +220,13 @@ export class IPFSService {
       // 创建基于 HTTP API 的客户端
       this.ipfs = this.createHTTPAPIClient(ipfsUrl);
       logger.info('IPFS连接成功（HTTP API）', { url: ipfsUrl });
+      this.ipfsRetries = 0;
+      this.metrics.setIPFSConnectionStatus(true);
     } catch (error) {
       logger.warn('IPFS连接失败，使用模拟模式:', error);
       this.ipfs = this.createMockIPFS();
+      this.metrics.setIPFSConnectionStatus(false);
+      this.metrics.incIPFSReconnectionAttempts();
     }
   }
 
@@ -255,7 +276,7 @@ export class IPFSService {
         yield Buffer.from(response.data);
       },
 
-      id: async () => {
+      id: async (): Promise<unknown> => {
         const axios = await import('axios');
         const response = await axios.default.post(`${baseUrl}/api/v0/id`, null, {
           timeout: 10000,
@@ -265,7 +286,7 @@ export class IPFSService {
       },
 
       files: {
-        stat: async (path: string) => {
+        stat: async (path: string): Promise<unknown> => {
           const axios = await import('axios');
           const response = await axios.default.post(`${baseUrl}/api/v0/files/stat?arg=${path}`, null, {
             timeout: 10000,
@@ -276,7 +297,7 @@ export class IPFSService {
       },
 
       pin: {
-        add: async (cid: string) => {
+        add: async (cid: string): Promise<unknown> => {
           const axios = await import('axios');
           const response = await axios.default.post(`${baseUrl}/api/v0/pin/add?arg=${cid}`, null, {
             timeout: 30000,
@@ -284,7 +305,7 @@ export class IPFSService {
           });
           return response.data;
         },
-        rm: async (cid: string) => {
+        rm: async (cid: string): Promise<unknown> => {
           const axios = await import('axios');
           const response = await axios.default.post(`${baseUrl}/api/v0/pin/rm?arg=${cid}`, null, {
             timeout: 30000,
@@ -295,7 +316,7 @@ export class IPFSService {
       },
 
       repo: {
-        stat: async () => {
+        stat: async (): Promise<unknown> => {
           const axios = await import('axios');
           const response = await axios.default.post(`${baseUrl}/api/v0/repo/stat`, null, {
             timeout: 10000,
@@ -306,7 +327,7 @@ export class IPFSService {
       },
 
       object: {
-        stat: async (cid: string) => {
+        stat: async (cid: string): Promise<unknown> => {
           const axios = await import('axios');
           const response = await axios.default.post(`${baseUrl}/api/v0/object/stat?arg=${cid}`, null, {
             timeout: 10000,
@@ -394,6 +415,8 @@ export class IPFSService {
         this.ipfs = testClient as IPFSClient;
         this.currentNodeIndex = this.availableNodes.indexOf(node);
         logger.info(`IPFS initialized with node: ${nodeUrl}`);
+        this.metrics.setIPFSConnectionStatus(true);
+        this.metrics.incIPFSReconnectionAttempts();
         return;
       } catch (error) {
         logger.warn(`Failed to connect to IPFS node ${node.host}:${node.port}:`, error);
@@ -401,10 +424,12 @@ export class IPFSService {
       }
     }
 
+    this.metrics.setIPFSConnectionStatus(false);
     throw new Error('No healthy IPFS nodes available');
   }
 
   private startHealthChecks(): void {
+    if (process.env.NODE_ENV === 'test') return; // avoid open handles in Jest
     if (!this.productionConfig?.enabled) return;
 
     const light = (process.env["LIGHT_MODE"] ?? 'false').toLowerCase() === 'true';
@@ -456,6 +481,11 @@ export class IPFSService {
     if (currentNode && !currentNode.healthy) {
       await this.switchToHealthyNode();
     }
+
+    // Update metrics for active nodes and connection status
+    const healthyCount = this.availableNodes.filter(n => n.healthy).length;
+    this.metrics.setIPFSActiveNodes(healthyCount);
+    this.metrics.setIPFSConnectionStatus(healthyCount > 0);
   }
 
   private async switchToHealthyNode(): Promise<void> {
@@ -506,6 +536,43 @@ export class IPFSService {
   private async ensureIPFSReady(): Promise<void> {
     if (!this.ipfs) {
       await this.initializeIPFS();
+    }
+  }
+
+  private startHeartbeat(periodSec: number): void {
+    if (process.env.NODE_ENV === 'test') return; // avoid open handles in Jest
+    if (this.heartbeatInterval) { clearInterval(this.heartbeatInterval); this.heartbeatInterval = undefined; }
+    if (periodSec <= 0) return;
+    this.heartbeatInterval = setInterval(() => { void this.heartbeatTick(); }, periodSec * 1000);
+    resourceCleanupManager.registerInterval('ipfs-heartbeat', this.heartbeatInterval);
+  }
+
+  private async heartbeatTick(): Promise<void> {
+    if (this.hbInProgress) return;
+    this.hbInProgress = true;
+    try {
+      const ok = await this.checkConnection();
+      if (!ok) {
+        this.metrics.incIPFSHeartbeatFailures();
+        this.metrics.setIPFSConnectionStatus(false);
+        this.metrics.incIPFSReconnectionAttempts();
+        // Exponential backoff re-init
+        if (this.ipfsRetries < this.ipfsMaxRetries) {
+          this.ipfsRetries++;
+          const backoff = Math.min(this.ipfsRetryDelayMs * Math.pow(2, this.ipfsRetries - 1), 60000);
+          await new Promise(resolve => setTimeout(resolve, backoff));
+          await this.initializeIPFS();
+        } else {
+          this.ipfsRetries = 0; // reset window
+        }
+      } else {
+        this.metrics.setIPFSConnectionStatus(true);
+      }
+    } catch (e) {
+      this.metrics.incIPFSHeartbeatFailures();
+      this.metrics.setIPFSConnectionStatus(false)
+    } finally {
+      this.hbInProgress = false;
     }
   }
 
@@ -628,6 +695,129 @@ export class IPFSService {
     }
   }
 
+
+  /**
+   * Stream encrypt (AES-256-GCM) and upload to IPFS in chunks with backpressure control
+   * Returns metadata CID and plaintext file hash/size. Avoids loading full file into memory.
+   */
+  async streamEncryptAndUpload(params: {
+    input: NodeJS.ReadableStream;
+    fileName: string;
+    mimeType?: string;
+    dataKey?: Buffer;
+  }): Promise<IPFSUploadResponse & { iv: string; authTag: string; chunkCids: string[] }> {
+    await this.ensureIPFSReady();
+    const ipfsClient = this.ipfs;
+    if (!ipfsClient) throw new Error('IPFS client not initialized');
+
+    const { input, fileName, mimeType, dataKey } = params;
+
+    // Hash plaintext while streaming
+    const hash = crypto.createHash('sha256');
+
+    // Initialize cipher
+    if (!dataKey && !this.defaultEncryptionKey) {
+      if (this.requireDataKey) {
+        throw new Error('DATAKEY_REQUIRED: explicit dataKey required for encryption');
+      }
+    }
+    const key = (dataKey && dataKey.length === 32)
+      ? dataKey
+      : crypto.scryptSync(this.defaultEncryptionKey, 'ipfs-service:v1', 32);
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+
+    const upConc = Math.max(1, parseInt(String(process.env["IPFS_UPLOAD_CONCURRENCY"] ?? '4'), 10));
+    const pending: Promise<void>[] = [];
+    const chunkCids: string[] = [];
+
+    let encryptedCarry = Buffer.alloc(0) as unknown as Buffer;
+    let index = 0;
+    let totalPlain = 0;
+
+    const flushChunk = async (chunk: Buffer, idx: number): Promise<void> => {
+      const resultUnknown = await ipfsClient.add({ path: `${fileName}_chunk_${idx}`, content: chunk });
+      const result = resultUnknown as { cid?: { toString(): string } };
+      if (!result?.cid) throw new Error('IPFS add returned invalid result for chunk');
+      chunkCids[idx] = result.cid.toString();
+    };
+
+    const schedule = async (buf: Buffer, idx: number): Promise<void> => {
+      // Backpressure: limit in-flight uploads
+      const task = flushChunk(buf, idx).finally(() => {
+        const i = pending.indexOf(task as unknown as Promise<void>);
+        if (i >= 0) void pending.splice(i, 1);
+      });
+      pending.push(task);
+      if (pending.length >= upConc) {
+        await Promise.race(pending).catch(() => undefined);
+      }
+    };
+
+    for await (const piece of input) {
+      const buf = Buffer.isBuffer(piece) ? piece : Buffer.from(piece as unknown as Uint8Array);
+      totalPlain += buf.length;
+      hash.update(buf);
+      const enc = cipher.update(buf);
+      if (enc.length) {
+        encryptedCarry = encryptedCarry.length ? Buffer.concat([encryptedCarry, enc]) : enc;
+        while (encryptedCarry.length >= this.chunkSize) {
+          const out = encryptedCarry.subarray(0, this.chunkSize);
+          encryptedCarry = encryptedCarry.subarray(this.chunkSize);
+          await schedule(out as unknown as Buffer, index++);
+        }
+      }
+    }
+
+    // Finalize cipher
+    const finalPart = cipher.final();
+    if (finalPart.length) {
+      encryptedCarry = encryptedCarry.length ? Buffer.concat([encryptedCarry, finalPart]) : finalPart;
+    }
+
+    // Flush remaining encrypted payload
+    if (encryptedCarry.length) {
+      await schedule(encryptedCarry as unknown as Buffer, index++);
+      encryptedCarry = Buffer.alloc(0);
+    }
+
+    // Wait for all uploads to finish
+    await Promise.allSettled(pending);
+
+    const fileHash = hash.digest('hex');
+    const authTag = cipher.getAuthTag();
+
+    // Build and upload metadata
+    const metadata: IPFSFileMetadata = {
+      fileName,
+      fileHash,
+      fileSize: totalPlain,
+      chunkCount: chunkCids.length,
+      chunkCids,
+      iv: iv.toString('hex'),
+      authTag: authTag.toString('hex'),
+      timestamp: new Date().toISOString(),
+      mimeType: mimeType ?? 'application/octet-stream',
+      originalName: fileName,
+    };
+
+    const metaResUnknown = await ipfsClient.add({ path: `${fileName}_metadata.json`, content: JSON.stringify(metadata) });
+    const metaRes = metaResUnknown as { cid?: { toString(): string } };
+    if (!metaRes?.cid) throw new Error('IPFS add returned invalid result for metadata');
+
+    // Optional pin and cluster replication (best-effort)
+    try { await ipfsClient.pin.add(metaRes.cid.toString()); } catch (e) { logger.warn('pin failed', (e as Error)?.message); }
+    try {
+      await this.cluster?.pin(metaRes.cid.toString(), {
+        replication_min: Number((typeof process.env["IPFS_CLUSTER_REPL_MIN"] === 'string' && process.env["IPFS_CLUSTER_REPL_MIN"].trim() !== '' ? process.env["IPFS_CLUSTER_REPL_MIN"] : '3')),
+        replication_max: Number((typeof process.env["IPFS_CLUSTER_REPL_MAX"] === 'string' && process.env["IPFS_CLUSTER_REPL_MAX"].trim() !== '' ? process.env["IPFS_CLUSTER_REPL_MAX"] : '3')),
+        name: `medical-record-${fileName}-${Date.now()}`,
+      });
+    } catch (e) { logger.warn('cluster pin failed/ignored', (e as Error)?.message); }
+
+    return { cid: metaRes.cid.toString(), fileHash, fileSize: totalPlain, iv: metadata.iv, authTag: metadata.authTag, chunkCids };
+  }
+
   /**
    * Retrieve file from IPFS (alias for downloadFile)
    * @param cid IPFS CID
@@ -668,9 +858,8 @@ export class IPFSService {
   }
 
   /**
-   * 从IPFS下载文件
-   * @param cid IPFS CID
-   * @returns 解密后的文件缓冲区
+   * 从IPFS下载文件（一次性Buffer）
+   * 注意：大文件会占用内存，建议优先使用 streamDownloadToWritable()
    */
   async downloadFile(cid: string): Promise<Buffer> {
     await this.ensureIPFSReady();
@@ -717,6 +906,62 @@ export class IPFSService {
   }
 
   /**
+   * 流式下载并解密，直接写入可写流（避免内存峰值）
+   */
+  async streamDownloadToWritable(params: { cid: string; writable: NodeJS.WritableStream; dataKey?: Buffer; onProgress?: (written: number) => void }): Promise<void> {
+    const { cid, writable, dataKey, onProgress } = params;
+    await this.ensureIPFSReady();
+    const ipfs = this.ipfs;
+    if (!ipfs) throw new Error('IPFS client not initialized');
+
+    // 读取元数据（通常很小）
+    const metadataChunks: Buffer[] = [];
+    for await (const ch of ipfs.cat(cid)) { metadataChunks.push(ch); }
+    const metadata = JSON.parse(Buffer.concat(metadataChunks).toString()) as IPFSFileMetadata;
+
+    // 初始化解密器（AES-256-GCM）
+    if (!dataKey && !this.defaultEncryptionKey) {
+      if (this.requireDataKey) {
+        throw new Error('DATAKEY_REQUIRED: explicit dataKey required for decryption');
+      }
+    }
+    const key = (dataKey && dataKey.length === 32)
+      ? dataKey
+      : crypto.scryptSync(this.defaultEncryptionKey, 'ipfs-service:v1', 32);
+    const iv = Buffer.from(metadata.iv, 'hex');
+    const authTag = Buffer.from(metadata.authTag, 'hex');
+
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(authTag);
+
+    let written = 0;
+    try {
+      for (const chunkCid of metadata.chunkCids) {
+        for await (const encChunk of ipfs.cat(chunkCid)) {
+          const dec = decipher.update(encChunk);
+          if (dec.length) {
+            if (!writable.write(dec)) {
+              await new Promise<void>(resolve => writable.once('drain', resolve));
+            }
+            written += dec.length;
+            if (onProgress) onProgress(written);
+          }
+        }
+      }
+      const finalBuf = decipher.final();
+      if (finalBuf.length) {
+        if (!writable.write(finalBuf)) {
+          await new Promise<void>(resolve => writable.once('drain', resolve));
+        }
+        written += finalBuf.length;
+        if (onProgress) onProgress(written);
+      }
+    } catch (e) {
+      throw new Error(`IPFS流式下载失败: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  /**
    * 检查IPFS节点连接状态
    */
   async checkConnection(): Promise<boolean> {
@@ -749,10 +994,14 @@ export class IPFSService {
   private encryptData(data: Buffer, explicitKey?: Buffer): EncryptedData {
     try {
       const algorithm = 'aes-256-gcm';
-      const key =
-        explicitKey && explicitKey.length === 32
-          ? explicitKey
-          : crypto.scryptSync(this.defaultEncryptionKey, 'salt', 32);
+      if (!explicitKey && !this.defaultEncryptionKey) {
+        if (this.requireDataKey) {
+          throw new Error('DATAKEY_REQUIRED: explicit dataKey required for encryption');
+        }
+      }
+      const key = (explicitKey && explicitKey.length === 32)
+        ? explicitKey
+        : crypto.scryptSync(this.defaultEncryptionKey, 'ipfs-service:v1', 32);
       const iv = crypto.randomBytes(12); // GCM建议12字节
       const cipher = crypto.createCipheriv(algorithm, key, iv);
       const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
@@ -776,7 +1025,12 @@ export class IPFSService {
   private decryptData(encryptedData: EncryptedData): Buffer {
     try {
       const algorithm = 'aes-256-gcm';
-      const key = crypto.scryptSync(this.defaultEncryptionKey, 'salt', 32);
+      if (!this.defaultEncryptionKey) {
+        if (this.requireDataKey) {
+          throw new Error('DATAKEY_REQUIRED: explicit dataKey required for decryption');
+        }
+      }
+      const key = crypto.scryptSync(this.defaultEncryptionKey, 'ipfs-service:v1', 32);
       const iv = Buffer.from(encryptedData.iv, 'hex');
       const authTag = Buffer.from(encryptedData.authTag, 'hex');
       const decipher = crypto.createDecipheriv(algorithm, key, iv);
@@ -811,9 +1065,14 @@ export class IPFSService {
 
   private decryptDataFromBuffer(params: { encryptedBuffer: Buffer; iv: string; authTag: string }, explicitKey?: Buffer): Buffer {
     const algorithm = 'aes-256-gcm';
+    if (!explicitKey && !this.defaultEncryptionKey) {
+      if (this.requireDataKey) {
+        throw new Error('DATAKEY_REQUIRED: explicit dataKey required for decryption');
+      }
+    }
     const key = (explicitKey && explicitKey.length === 32)
       ? explicitKey
-      : crypto.scryptSync(this.defaultEncryptionKey, 'salt', 32);
+      : crypto.scryptSync(this.defaultEncryptionKey, 'ipfs-service:v1', 32);
     const iv = Buffer.from(params.iv, 'hex');
     const authTag = Buffer.from(params.authTag, 'hex');
     const decipher = crypto.createDecipheriv(algorithm, key, iv);

@@ -14,16 +14,7 @@ interface MonitoringRequest extends Omit<Request, 'user'> {
   user?: EnhancedUser;
 }
 
-interface LogEntry {
-  timestamp: Date;
-  level: string;
-  message: string;
-  meta: Record<string, unknown>;
-  service: string;
-  userId?: string;
-  ip?: string;
-  userAgent?: string;
-}
+
 
 interface SystemMetrics {
   cpuUsage: number;

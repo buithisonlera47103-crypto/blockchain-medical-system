@@ -164,6 +164,107 @@ jest.mock('fs', () => ({
   })),
 }));
 
+// Mock stream module
+jest.mock('stream', () => ({
+  Readable: {
+    from: jest.fn((data) => {
+      const mockPipedStream = {
+        on: jest.fn(function(this: any, event: string, handler: Function) {
+          // Store handlers for later invocation
+          if (!this._handlers) this._handlers = {};
+          if (!this._handlers[event]) this._handlers[event] = [];
+          this._handlers[event].push(handler);
+          return this;
+        }),
+        pipe: jest.fn(),
+        destroy: jest.fn(),
+        _handlers: {} as Record<string, Function[]>,
+      };
+
+      const mockStream = {
+        on: jest.fn(function(this: any, event: string, handler: Function) {
+          // Store handlers for later invocation
+          if (!this._handlers) this._handlers = {};
+          if (!this._handlers[event]) this._handlers[event] = [];
+          this._handlers[event].push(handler);
+          return this;
+        }),
+        pipe: jest.fn((dest: any) => {
+          // pipe should return the destination stream for chaining
+          // Simulate piping by calling data handlers on the destination
+          setImmediate(() => {
+            const handlers = (mockStream as any)._handlers || {};
+            // Trigger end event on piped stream
+            if (dest && dest._handlers && dest._handlers['end']) {
+              dest._handlers['end'].forEach((h: Function) => h());
+            }
+          });
+          return dest || mockPipedStream;
+        }),
+        destroy: jest.fn(),
+        _handlers: {} as Record<string, Function[]>,
+      };
+
+      // Simulate stream behavior for non-piped streams
+      setImmediate(() => {
+        const handlers = (mockStream as any)._handlers || {};
+        if (Array.isArray(data)) {
+          data.forEach(chunk => {
+            if (handlers['data']) {
+              handlers['data'].forEach((h: Function) => h(chunk));
+            }
+          });
+        }
+        if (handlers['end']) {
+          handlers['end'].forEach((h: Function) => h());
+        }
+      });
+
+      return mockStream;
+    }),
+  },
+}));
+
+// Mock csv-parser for migration tests
+jest.mock('csv-parser', () => {
+  return jest.fn(() => {
+    const transform = {
+      on: jest.fn(function(this: any, event: string, handler: Function) {
+        if (!this._handlers) this._handlers = {};
+        if (!this._handlers[event]) this._handlers[event] = [];
+        this._handlers[event].push(handler);
+        
+        // Immediately emit 'end' event for testing
+        if (event === 'end') {
+          setImmediate(() => handler());
+        }
+        return this;
+      }),
+      pipe: jest.fn(),
+      _handlers: {} as Record<string, Function[]>,
+    };
+    return transform;
+  });
+});
+
+// Mock AWS SDK for HSM tests
+jest.mock('aws-sdk', () => ({
+  CloudHSMV2: jest.fn().mockImplementation(() => ({
+    describeClusters: jest.fn().mockResolvedValue({
+      Clusters: [{ ClusterId: 'test-cluster', State: 'ACTIVE' }],
+    }),
+  })),
+}), { virtual: true });
+
+// Mock Azure SDKs for HSM tests
+jest.mock('@azure/arm-keyvault', () => ({
+  KeyVaultManagementClient: jest.fn().mockImplementation(() => ({})),
+}), { virtual: true });
+
+jest.mock('@azure/identity', () => ({
+  DefaultAzureCredential: jest.fn().mockImplementation(() => ({})),
+}), { virtual: true });
+
 // Mock path operations (opt-in only to avoid breaking express/supertest)
 if (process.env.MOCK_PATH === 'true') {
   jest.mock('path', () => ({

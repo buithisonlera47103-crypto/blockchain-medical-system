@@ -90,7 +90,7 @@ interface MedicalRecordProviderProps {
 }
 
 // 从localStorage加载数据的辅助函数
-const loadFromStorage = <T>(key: string, defaultValue: T): T => {
+const loadFromStorage = <T,>(key: string, defaultValue: T): T => {
   try {
     const item = localStorage.getItem(key);
     return item ? JSON.parse(item) : defaultValue;
@@ -101,7 +101,7 @@ const loadFromStorage = <T>(key: string, defaultValue: T): T => {
 };
 
 // 保存到localStorage的辅助函数
-const saveToStorage = <T>(key: string, value: T): void => {
+const saveToStorage = <T,>(key: string, value: T): void => {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch (error) {

@@ -5,7 +5,8 @@
 
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import path from 'path';
-import { Gateway, Network, Wallet, Wallets, Contract, ContractListener, X509Identity } from 'fabric-network';
+
+import { Gateway, Network, Wallet, Wallets, Contract, ContractListener, X509Identity, DefaultEventHandlerStrategies } from 'fabric-network';
 
 import { FabricConnectionDiagnostics } from '../diagnostics/fabricConnectionFix';
 import { logger } from '../utils/logger';
@@ -14,6 +15,7 @@ import { getRedisClient } from '../utils/redisClient';
 import { CacheManager } from './cache/CacheManager';
 import { FabricDiagnosticsService } from './FabricDiagnosticsService';
 import { FabricOptimizationService } from './FabricOptimizationService';
+import MetricsService from './MetricsService';
 /**
  * 区块链连接配置接口
  */
@@ -59,6 +61,11 @@ export class BlockchainService {
   private readonly diagnosticsService: FabricDiagnosticsService;
   private readonly optimizationService: FabricOptimizationService;
   private readonly lightMode: boolean = (process.env.LIGHT_MODE ?? 'false').toLowerCase() === 'true';
+  private readonly metrics = MetricsService.getInstance();
+
+  // Heartbeat/monitoring
+  private heartbeatInterval: NodeJS.Timeout | null = null;
+  private hbInProgress = false;
 
   constructor(loggerInstance?: typeof logger) {
     this.logger = loggerInstance ?? logger;
@@ -196,14 +203,24 @@ export class BlockchainService {
         // 尝试自动修复
         const fixResult = await this.attemptAutoFix();
         if (fixResult.success) {
-          return await this.establishConnection();
+          const retry = await this.establishConnection();
+          if (!retry.success) {
+            this.metrics.setFabricConnectionStatus(false);
+          }
+          return retry;
         } else {
+          this.metrics.setFabricConnectionStatus(false);
           return connectionResult;
         }
       }
 
       this.isConnected = true;
       this.connectionRetries = 0;
+      this.metrics.setFabricConnectionStatus(true);
+
+      // Start/refresh heartbeat monitor
+      const hbSec = Math.max(10, parseInt(process.env.FABRIC_HEARTBEAT_SEC ?? '45', 10));
+      this.startHeartbeat(hbSec);
 
       this.logger.info('区块链连接初始化成功');
       return {
@@ -297,15 +314,17 @@ export class BlockchainService {
         },
         eventHandlerOptions: {
           commitTimeout: this.config.networkTimeout,
-          strategy: null, // 不等待提交事件，避免事件服务/发现依赖
+          strategy: (process.env.DISABLE_FABRIC_EVENTS === 'true')
+            ? null
+            : DefaultEventHandlerStrategies.MSPID_SCOPE_ALLFORTX,
         },
-        // 完全禁用事件服务以避免 "No targets provided" 错误
+        // 事件服务默认启用，用于提交确认；可通过 DISABLE_FABRIC_EVENTS=true 禁用
         eventSourceOptions: {
-          enabled: false,
+          enabled: process.env.DISABLE_FABRIC_EVENTS !== 'true',
         },
-        // 禁用区块事件监听以避免 BlockEventSource 错误
+        // 区块事件监听默认启用；可通过 DISABLE_FABRIC_EVENTS=true 禁用
         blockEventSourceOptions: {
-          enabled: false,
+          enabled: process.env.DISABLE_FABRIC_EVENTS !== 'true',
         },
       };
 
@@ -503,6 +522,8 @@ export class BlockchainService {
       this.connectionRetries++;
       const backoff = Math.min(this.retryDelay * Math.pow(2, this.connectionRetries - 1), 60000);
       this.logger.info(`尝试重新连接 (${this.connectionRetries}/${this.maxRetries})，等待 ${Math.round(backoff / 1000)}s 后重试`);
+      this.metrics.incFabricReconnectionAttempts();
+      this.metrics.setFabricConnectionStatus(false);
 
       // 等待一段时间后重试
       await new Promise(resolve => setTimeout(resolve, backoff));
@@ -529,26 +550,85 @@ export class BlockchainService {
       if (!connectionResult.success) {
         return connectionResult as unknown as BlockchainResult<string>;
       }
-
       if (!this.contract) {
         throw new Error('合约未初始化');
       }
 
-      this.logger.info(`提交交易: ${functionName}`, { args });
+      const retries = Math.max(0, parseInt(process.env.FABRIC_SUBMIT_RETRIES ?? '1', 10));
+      const timeoutMs = Math.max(1000, Number(this.config.networkTimeout || 30000));
 
-      const result = await this.contract.submitTransaction(functionName, ...args);
-      const resultString = result.toString();
+      let lastErr: unknown;
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        const attemptStart = Date.now();
+        try {
+          const tx = this.contract.createTransaction(functionName);
+          const txId = tx.getTransactionId();
+          this.logger.info(`提交交易[${attempt + 1}/${retries + 1}]: ${functionName}`, { args, txId });
 
-      this.logger.info(`交易提交成功: ${functionName}`);
+          // Wrap with timeout to guard against indefinite waits
+          const withTimeout = async <T>(p: Promise<T>, ms: number): Promise<T> => {
+            let t: NodeJS.Timeout | null = null;
+            try {
+              return await Promise.race([
+                p,
+                new Promise<T>((_, reject) => { t = setTimeout(() => reject(new Error('FABRIC_SUBMIT_TIMEOUT')), ms); }),
+              ]) as T;
+            } finally { if (t) clearTimeout(t); }
+          };
 
+          const result = await withTimeout(tx.submit(...args), timeoutMs);
+          const resultString = result?.toString?.() ?? String(result ?? '');
+          this.logger.info(`交易提交成功: ${functionName}`, { txId });
+          this.metrics.recordBlockchainTx(true, Date.now() - attemptStart);
+
+          return {
+            success: true,
+            data: resultString,
+            transactionId: txId,
+            timestamp: new Date().toISOString(),
+          };
+        } catch (err: unknown) {
+          lastErr = err;
+          this.metrics.recordBlockchainTx(false, Date.now() - attemptStart);
+          const msg = (err as Error)?.message ?? String(err);
+          // 基于错误类型分类：仅对超时/暂时性错误重试；背书/权限/验证失败不重试
+          const lower = msg.toLowerCase();
+          const retryable = (
+            lower.includes('timeout') ||
+            lower.includes('timed out') ||
+            lower.includes('unavailable') ||
+            lower.includes('fabric_submit_timeout') ||
+            lower.includes('mvcc_read_conflict') ||
+            lower.includes('too many requests')
+          ) && !(
+            lower.includes('endorsement') ||
+            lower.includes('policy') ||
+            lower.includes('access denied') ||
+            lower.includes('forbidden') ||
+            lower.includes('permission') ||
+            lower.includes('chaincode error')
+          );
+          this.logger.info(`交易提交失败（${retryable ? '可重试' : '不可重试'}）: ${functionName}`, { attempt: attempt + 1, retries, error: msg });
+          if (attempt < retries && retryable) {
+            const backoff = Math.min(1000 * Math.pow(2, attempt), 8000);
+            await new Promise(r => setTimeout(r, backoff));
+            continue;
+          }
+          // 不可重试或已到最大次数，跳出循环
+          break;
+        }
+      }
+
+      const message = lastErr instanceof Error ? lastErr.message : String(lastErr);
+      this.logger.error(`交易提交失败: ${functionName}`, { error: message });
       return {
-        success: true,
-        data: resultString,
+        success: false,
+        error: `交易失败: ${message}`,
         timestamp: new Date().toISOString(),
       };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`交易提交失败: ${functionName}`, { error: message });
+      this.logger.error(`交易提交失败（致命）: ${functionName}`, { error: message });
       return {
         success: false,
         error: `交易失败: ${message}`,
@@ -595,8 +675,16 @@ export class BlockchainService {
         cacheKey,
         async () => {
           const contract = this.contract;
-          const result = await contract.evaluateTransaction(functionName, ...args);
-          return result.toString();
+          const t0 = Date.now();
+          try {
+            const result = await contract.evaluateTransaction(functionName, ...args);
+            const out = result.toString();
+            this.metrics.recordBlockchainEval(true, Date.now() - t0);
+            return out;
+          } catch (e) {
+            this.metrics.recordBlockchainEval(false, Date.now() - t0);
+            throw e;
+          }
         },
         { ttl: 1, namespace: 'blockchain', serialize: true }
       );
@@ -746,6 +834,7 @@ export class BlockchainService {
    */
   async cleanup(): Promise<void> {
     try {
+      if (this.heartbeatInterval) { clearInterval(this.heartbeatInterval); this.heartbeatInterval = null; }
       if (this.gateway) {
         try {
           this.gateway.disconnect();
@@ -760,12 +849,65 @@ export class BlockchainService {
       this.contract = null;
       this.wallet = null;
       this.isConnected = false;
+      this.metrics.setFabricConnectionStatus(false);
       this.contractListenerRegistered = false;
 
       this.logger.info('区块链连接已清理');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error('清理连接时出错:', message);
+    }
+  }
+
+  /** Heartbeat monitoring to maintain connection health */
+  private startHeartbeat(periodSec: number): void {
+    if (process.env.NODE_ENV === 'test') return; // avoid open handles in Jest
+    if (this.heartbeatInterval) { clearInterval(this.heartbeatInterval); this.heartbeatInterval = null; }
+    if (periodSec <= 0) return;
+    this.heartbeatInterval = setInterval(() => { void this.heartbeatTick(); }, periodSec * 1000);
+    this.logger.info(`Fabric heartbeat started: every ${periodSec}s`);
+  }
+
+  private async heartbeatTick(): Promise<void> {
+    if (this.hbInProgress) return;
+    this.hbInProgress = true;
+    try {
+      if (!this.contract) {
+        this.isConnected = false;
+        await this.ensureConnection();
+        return;
+      }
+      // Use a lightweight evaluate with timeout race
+      const withTimeout = async <T>(p: Promise<T>, ms: number, onTimeout: () => T): Promise<T> => {
+        let t: NodeJS.Timeout | null = null;
+        try {
+          return await Promise.race([p, new Promise<T>(resolve => { t = setTimeout(() => resolve(onTimeout()), ms); })]);
+        } finally { if (t) clearTimeout(t); }
+      };
+      type HBShape = { success?: boolean; error?: string };
+      const isHB = (x: unknown): x is HBShape => typeof x === 'object' && x !== null && ('success' in x || 'error' in x);
+      const res: unknown = await withTimeout(this.evaluateTransaction('GetAllAssets') as unknown as Promise<unknown>, 4000, () => ({ success: false, error: 'HB_TIMEOUT' }));
+      const ok = isHB(res) ? !!res.success : false;
+      if (!ok) {
+        this.logger.info('Fabric heartbeat failed, scheduling reconnect', { error: isHB(res) ? (res.error ?? 'unknown') : 'unknown' });
+        this.isConnected = false;
+        this.metrics.incFabricHeartbeatFailures();
+        this.metrics.setFabricConnectionStatus(false);
+        this.metrics.incFabricReconnectionAttempts();
+        await this.ensureConnection();
+      } else {
+        this.isConnected = true;
+        this.metrics.setFabricConnectionStatus(true);
+      }
+    } catch (e) {
+      this.logger.info('Fabric heartbeat exception', { error: (e as Error)?.message ?? String(e) });
+      this.isConnected = false;
+      this.metrics.incFabricHeartbeatFailures();
+      this.metrics.setFabricConnectionStatus(false);
+      this.metrics.incFabricReconnectionAttempts();
+      await this.ensureConnection();
+    } finally {
+      this.hbInProgress = false;
     }
   }
 
@@ -953,7 +1095,15 @@ export class BlockchainService {
     granteeId: string
   ): Promise<BlockchainResult<unknown>> {
     try {
-      return await this.submitTransaction('RevokeAccess', recordId, granteeId);
+      let res = await this.submitTransaction('RevokeAccess', recordId, granteeId);
+      if (res.success) return res;
+      // 兼容别名
+      const candidates = ['RevokePermission', 'RevokeRecordAccess'];
+      for (const fn of candidates) {
+        res = await this.submitTransaction(fn, recordId, granteeId);
+        if (res.success) return res;
+      }
+      return res;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error('撤销访问失败', { recordId, granteeId, error: message });

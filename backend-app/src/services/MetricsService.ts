@@ -456,6 +456,35 @@ export class MetricsService {
     this.collector.recordCustomMetric({ name: 'blockchain_tx_latency_ms', value: durationMs, type: 'histogram' });
   }
 
+  public recordBlockchainEval(success: boolean, durationMs: number): void {
+    this.collector.recordCustomMetric({ name: `blockchain_eval_${success ? 'success' : 'failure'}_total`, value: 1, type: 'counter' });
+    this.collector.recordCustomMetric({ name: 'blockchain_eval_latency_ms', value: durationMs, type: 'histogram' });
+  }
+
+  // Fabric/IPFS connection health metrics (gauges/counters)
+  public setFabricConnectionStatus(connected: boolean): void {
+    this.collector.recordCustomMetric({ name: 'fabric_connection_status', value: connected ? 1 : 0, type: 'gauge' });
+  }
+  public incFabricHeartbeatFailures(): void {
+    this.collector.recordCustomMetric({ name: 'fabric_heartbeat_failures_total', value: 1, type: 'counter' });
+  }
+  public incFabricReconnectionAttempts(): void {
+    this.collector.recordCustomMetric({ name: 'fabric_reconnection_attempts_total', value: 1, type: 'counter' });
+  }
+
+  public setIPFSConnectionStatus(connected: boolean): void {
+    this.collector.recordCustomMetric({ name: 'ipfs_connection_status', value: connected ? 1 : 0, type: 'gauge' });
+  }
+  public incIPFSHeartbeatFailures(): void {
+    this.collector.recordCustomMetric({ name: 'ipfs_heartbeat_failures_total', value: 1, type: 'counter' });
+  }
+  public incIPFSReconnectionAttempts(): void {
+    this.collector.recordCustomMetric({ name: 'ipfs_reconnection_attempts_total', value: 1, type: 'counter' });
+  }
+  public setIPFSActiveNodes(count: number): void {
+    this.collector.recordCustomMetric({ name: 'ipfs_active_nodes_count', value: count, type: 'gauge' });
+  }
+
   // Alert checking
   public checkAlerts(): Array<{
     severity: string;

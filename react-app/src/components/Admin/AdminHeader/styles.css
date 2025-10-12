@@ -1,0 +1,165 @@
+/**
+ * 管理员顶部导航栏样式
+ */
+
+.admin-header {
+  background: #ffffff;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  height: 64px;
+  position: sticky;
+  top: 0;
+  z-index: 999;
+}
+
+/* 左侧品牌区 */
+.admin-header-left {
+  flex: 0 0 auto;
+}
+
+.admin-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-icon {
+  font-size: 24px;
+}
+
+.brand-text {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1890ff;
+  white-space: nowrap;
+}
+
+.brand-version {
+  font-size: 12px;
+  color: #8c8c8c;
+  background: #f0f0f0;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+/* 中间搜索区 */
+.admin-header-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  padding: 0 24px;
+}
+
+.global-search {
+  max-width: 500px;
+}
+
+.global-search .ant-input {
+  border-radius: 20px;
+  background: #f5f5f5;
+}
+
+.global-search .ant-input:hover,
+.global-search .ant-input:focus {
+  background: #ffffff;
+}
+
+/* 右侧操作区 */
+.admin-header-right {
+  flex: 0 0 auto;
+}
+
+.header-icon {
+  font-size: 18px;
+  color: #595959;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.header-icon:hover {
+  color: #1890ff;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px 12px;
+  border-radius: 20px;
+  transition: all 0.3s;
+}
+
+.user-info:hover {
+  background: #f5f5f5;
+}
+
+.user-name {
+  font-size: 14px;
+  color: #262626;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 通知项样式 */
+.notification-item {
+  padding: 8px 12px;
+  width: 280px;
+}
+
+.notification-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #262626;
+  margin-bottom: 4px;
+}
+
+.notification-desc {
+  font-size: 13px;
+  color: #595959;
+  margin-bottom: 4px;
+}
+
+.notification-time {
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+/* 响应式设计 */
+@media (max-width: 1200px) {
+  .brand-text {
+    display: none;
+  }
+  
+  .global-search {
+    width: 300px;
+  }
+}
+
+@media (max-width: 768px) {
+  .admin-header {
+    padding: 0 16px;
+  }
+  
+  .brand-version {
+    display: none;
+  }
+  
+  .admin-header-center {
+    padding: 0 16px;
+  }
+  
+  .global-search {
+    width: 200px;
+  }
+  
+  .user-name {
+    display: none;
+  }
+}
+

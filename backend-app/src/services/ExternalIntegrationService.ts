@@ -1,7 +1,10 @@
 import crypto from 'crypto';
+
 import { Pool } from 'mysql2/promise';
+
 import AppError from '../utils/AppError';
 import { logger } from '../utils/logger';
+
 import { cacheService } from './CacheService';
 
 export interface ExternalIntegrationServiceConfig {
@@ -113,7 +116,7 @@ export class ExternalIntegrationService {
     // OAuth2 config validation
     if (this.config.oauth2?.enabled) {
       const providers = this.config.oauth2.providers || {};
-      for (const [name, p] of Object.entries(providers)) {
+      for (const [_name, p] of Object.entries(providers)) {
         if (!p.clientId || !p.clientSecret || !p.authUrl || !p.tokenUrl || !p.userInfoUrl || !Array.isArray(p.scope) || p.scope.length === 0) {
           throw new AppError('Invalid OAuth2 provider configuration', 400);
         }
@@ -201,7 +204,7 @@ export class ExternalIntegrationService {
     };
   }
 
-  async handleOAuth2Callback(code: string, state: string): Promise<{ accessToken: string; userInfo: any }> {
+  async handleOAuth2Callback(code: string, state: string): Promise<{ accessToken: string; userInfo: unknown }> {
     const stateData = await cacheService.get<{ providerId: string; redirectUri: string }>(`oauth2:state:${state}`);
     if (!stateData) {
       throw new AppError('Invalid or expired state', 400);
@@ -451,10 +454,11 @@ export class ExternalIntegrationService {
       [userId, biometricType]
     );
 
-    return (rows as any[])[0]?.template_data || null;
+    const row = (rows as Array<{ template_data?: string }>)[0];
+    return row?.template_data || null;
   }
 
-  private async matchBiometric(biometricData: string, template: string): Promise<number> {
+  private async matchBiometric(_biometricData: string, _template: string): Promise<number> {
     // 模拟生物识别匹配算法
     // 实际实现应调用专业的生物识别SDK
     const similarity = Math.random() * 0.3 + 0.7; // 模拟70%-100%的相似度
@@ -477,10 +481,11 @@ export class ExternalIntegrationService {
       [participantId]
     );
 
-    return (rows as any[]).length > 0;
+    const arr = rows as unknown[];
+    return arr.length > 0;
   }
 
-  private async decryptFederatedLearningData(encryptedData: string): Promise<any> {
+  private async decryptFederatedLearningData(encryptedData: string): Promise<unknown> {
     if (!this.config.federatedLearning.encryptionKey) {
       throw new AppError('Encryption key not configured', 500);
     }
@@ -495,7 +500,7 @@ export class ExternalIntegrationService {
     }
   }
 
-  private async encryptFederatedLearningData(data: any): Promise<string> {
+  private async encryptFederatedLearningData(data: unknown): Promise<string> {
     if (!this.config.federatedLearning.encryptionKey) {
       throw new AppError('Encryption key not configured', 500);
     }
@@ -510,12 +515,12 @@ export class ExternalIntegrationService {
     }
   }
 
-  private async validateGradients(gradients: any): Promise<boolean> {
+  private async validateGradients(gradients: unknown): Promise<boolean> {
     // 验证梯度数据的有效性
     return gradients && typeof gradients === 'object' && Object.keys(gradients).length > 0;
   }
 
-  private async aggregateGradients(modelId: string, gradients: any, round: number): Promise<{ accepted: boolean; nextRound: number }> {
+  private async aggregateGradients(modelId: string, gradients: unknown, round: number): Promise<{ accepted: boolean; nextRound: number }> {
     // 模拟梯度聚合逻辑
     // 实际实现应包含复杂的联邦学习聚合算法
     logger.info('Aggregating gradients', { modelId, round });
@@ -534,10 +539,11 @@ export class ExternalIntegrationService {
       [participantId, modelId]
     );
 
-    return (rows as any[]).length > 0;
+    const arr = rows as unknown[];
+    return arr.length > 0;
   }
 
-  private async getLatestFederatedModel(modelId: string): Promise<{ data: any; round: number } | null> {
+  private async getLatestFederatedModel(modelId: string): Promise<{ data: unknown; round: number } | null> {
     if (!this.db) return null;
 
     const [rows] = await this.db.execute(
@@ -545,7 +551,7 @@ export class ExternalIntegrationService {
       [modelId]
     );
 
-    const row = (rows as any[])[0];
+    const row = (rows as Array<{ model_data: string; round: number }>)[0];
     return row ? { data: JSON.parse(row.model_data), round: row.round } : null;
   }
 

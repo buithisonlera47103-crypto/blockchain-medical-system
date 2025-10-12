@@ -57,10 +57,12 @@ export class KeyManagementService {
   private static instance: KeyManagementService;
   private readonly cryptoExt: CryptographyService;
   private readonly keyCache: Map<string, Buffer> = new Map();
+  private readonly recordKeyCache: Map<string, { key: Buffer; exp: number }> = new Map();
   private readonly keyConfigs: Map<string, KeyConfig> = new Map();
   private readonly rotationConfig: KeyRotationConfig;
   private readonly persistEnabled: boolean;
   private readonly autoMigrate: boolean;
+  private readonly recordKeyTtlMs: number;
   private readonly cidToRecord: Map<string, string> = new Map();
 
   constructor() {
@@ -75,6 +77,8 @@ export class KeyManagementService {
 
     // Optional DB persistence for production readiness
     this.persistEnabled = (process.env.KMS_PERSIST_ENABLED ?? 'false').toLowerCase() === 'true';
+    this.recordKeyTtlMs = parseInt(String(process.env["KMS_RECORD_KEY_TTL_MS"] ?? '600000'), 10);
+
     this.autoMigrate = (process.env.KMS_AUTO_MIGRATE ?? 'false').toLowerCase() === 'true';
 
     // Schema will be ensured lazily on first persistence action to avoid async in constructor
@@ -208,33 +212,35 @@ export class KeyManagementService {
     userId?: string
   ): Promise<void> {
     try {
-      // 使用加密扩展服务保存信封密钥
-      // 保存密钥到缓存
-      this.keyCache.set(recordId, dataKey);
-
-      // 缓存密钥以提高性能
       const cacheKey = `record:${recordId}`;
+      const ttl = this.recordKeyTtlMs || 600000;
+      this.recordKeyCache.set(cacheKey, { key: dataKey, exp: Date.now() + ttl });
       this.keyCache.set(cacheKey, dataKey);
 
-      // 创建密钥存储记录
-      const keyStorage: KeyStorage = {
-        keyId: `record_${recordId}_${Date.now()}`,
-        encryptedKey: dataKey,
-        keyConfig: this.createKeyConfig(
-          `record_${recordId}`,
-          KeyType.DATA_KEY,
-          'AES-256-GCM',
-          dataKey.length
-        ),
-        recordId,
-        userId,
-        createdAt: new Date(),
-      };
+      if (this.persistEnabled) {
+        await this.ensureSchema();
+        const master = (process.env.MASTER_KEY ?? '').trim();
+        if (!master) {
+          throw new Error('MASTER_KEY is required when KMS_PERSIST_ENABLED=true');
+        }
+        const derived = crypto.scryptSync(master, 'kms:v1', 32);
+        const iv = crypto.randomBytes(12);
+        const cipher = crypto.createCipheriv('aes-256-gcm', derived, iv);
+        const ciphertext = Buffer.concat([cipher.update(dataKey), cipher.final()]);
+        const tag = cipher.getAuthTag();
+        const keyId = `record:${recordId}`;
+        const { pool } = await import('../config/database-mysql');
+        await pool.query(
+          `INSERT INTO kms_keys (key_id, record_id, key_cipher, iv, tag, ver)
+           VALUES (?, ?, ?, ?, ?, 1)
+           ON DUPLICATE KEY UPDATE key_cipher = VALUES(key_cipher), iv = VALUES(iv), tag = VALUES(tag), ver = ver + 1`,
+          [keyId, recordId, ciphertext, iv, tag]
+        );
+      }
 
       logger.info('记录数据密钥存储成功', {
         recordId,
         userId,
-        keyId: keyStorage.keyId,
         keySize: dataKey.length,
       });
     } catch (error) {
@@ -252,30 +258,52 @@ export class KeyManagementService {
    */
   public async loadRecordDataKey(recordId: string): Promise<Buffer | null> {
     try {
-      // 首先检查缓存
       const cacheKey = `record:${recordId}`;
-      const cachedKey = this.keyCache.get(cacheKey);
-      if (cachedKey) {
-        logger.debug('从缓存加载记录数据密钥', { recordId });
-        return cachedKey;
+      const hit = this.recordKeyCache.get(cacheKey);
+      if (hit && hit.exp > Date.now()) {
+        logger.debug('从TTL缓存加载记录数据密钥', { recordId });
+        return hit.key;
       }
 
-      // 从加密扩展服务加载
-      const dataKey = this.keyCache.get(recordId);
+      const cached = this.keyCache.get(cacheKey);
+      if (cached) {
+        this.recordKeyCache.set(cacheKey, { key: cached, exp: Date.now() + (this.recordKeyTtlMs || 600000) });
+        logger.debug('从内存缓存加载记录数据密钥', { recordId });
+        return cached;
+      }
 
-      if (dataKey) {
-        // 缓存加载的密钥
-        this.keyCache.set(cacheKey, dataKey);
+      if (!this.persistEnabled) {
+        logger.warn('记录数据密钥不存在(无持久化)', { recordId });
+        return null;
+      }
 
-        logger.debug('记录数据密钥加载成功', {
-          recordId,
-          keySize: dataKey.length,
-        });
-      } else {
+      await this.ensureSchema();
+      const { pool } = await import('../config/database-mysql');
+      const keyId = `record:${recordId}`;
+      const [rows] = (await pool.query(
+        `SELECT key_cipher, iv, tag FROM kms_keys WHERE key_id = ? LIMIT 1`,
+        [keyId]
+      )) as [Array<{ key_cipher: Buffer; iv: Buffer; tag: Buffer }>, unknown];
+      const row = rows?.[0];
+      if (!row?.key_cipher) {
         logger.warn('记录数据密钥不存在', { recordId });
+        return null;
       }
 
-      return dataKey;
+      const master = (process.env.MASTER_KEY ?? '').trim();
+      if (!master) {
+        throw new Error('MASTER_KEY is required when KMS_PERSIST_ENABLED=true');
+      }
+      const derived = crypto.scryptSync(master, 'kms:v1', 32);
+      const decipher = crypto.createDecipheriv('aes-256-gcm', derived, row.iv);
+      decipher.setAuthTag(row.tag);
+      const key = Buffer.concat([decipher.update(row.key_cipher), decipher.final()]);
+
+      this.recordKeyCache.set(cacheKey, { key, exp: Date.now() + (this.recordKeyTtlMs || 600000) });
+      this.keyCache.set(cacheKey, key);
+
+      logger.debug('记录数据密钥从数据库加载成功', { recordId });
+      return key;
     } catch (error) {
       logger.error('加载记录数据密钥失败', {
         recordId,
@@ -586,9 +614,19 @@ export class KeyManagementService {
         `CREATE TABLE IF NOT EXISTS kms_keys (
            key_id VARCHAR(255) PRIMARY KEY,
            record_id VARCHAR(255) NOT NULL,
+           key_cipher VARBINARY(1024) NULL,
+           iv VARBINARY(32) NULL,
+           tag VARBINARY(32) NULL,
+           ver INT DEFAULT 1,
            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
       );
+      // Best-effort idempotent alters for existing deployments
+      try { await pool.query(`ALTER TABLE kms_keys ADD COLUMN IF NOT EXISTS key_cipher VARBINARY(1024) NULL`); } catch (e) { logger.debug('ALTER kms_keys key_cipher skipped/unsupported', { error: (e as Error)?.message ?? String(e) }); }
+      try { await pool.query(`ALTER TABLE kms_keys ADD COLUMN IF NOT EXISTS iv VARBINARY(32) NULL`); } catch (e) { logger.debug('ALTER kms_keys iv skipped/unsupported', { error: (e as Error)?.message ?? String(e) }); }
+      try { await pool.query(`ALTER TABLE kms_keys ADD COLUMN IF NOT EXISTS tag VARBINARY(32) NULL`); } catch (e) { logger.debug('ALTER kms_keys tag skipped/unsupported', { error: (e as Error)?.message ?? String(e) }); }
+      try { await pool.query(`ALTER TABLE kms_keys ADD COLUMN IF NOT EXISTS ver INT DEFAULT 1`); } catch (e) { logger.debug('ALTER kms_keys ver skipped/unsupported', { error: (e as Error)?.message ?? String(e) }); }
+
       await pool.query(
         `CREATE TABLE IF NOT EXISTS kms_cid_map (
            cid VARCHAR(255) PRIMARY KEY,
@@ -599,7 +637,7 @@ export class KeyManagementService {
       );
       logger.info('KMS persistence schema ensured');
     } catch (err) {
-      logger.warn('Failed to ensure KMS schema (persistence disabled)', err);
+      logger.warn('Failed to ensure KMS schema (persistence disabled or ALTER unsupported)', err);
     }
   }
 

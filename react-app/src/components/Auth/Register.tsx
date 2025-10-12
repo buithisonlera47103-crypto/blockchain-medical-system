@@ -377,30 +377,6 @@ const Register: React.FC = () => {
                   </div>
                 </div>
               </div>
-
-              {/* 快速链接 */}
-              <div className="mt-auto bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-gray-700 dark:to-gray-600 rounded-xl p-4 shadow-md">
-                <div className="flex justify-around mb-4">
-                  <a
-                    href="/terms"
-                    className="flex items-center gap-2 text-sm text-slate-700 hover:text-blue-600 dark:text-slate-300 dark:hover:text-blue-400 transition-colors"
-                  >
-                    <span className="h-4 w-4">📋</span>
-                    服务条款
-                  </a>
-                  <a
-                    href="/privacy"
-                    className="flex items-center gap-2 text-sm text-slate-700 hover:text-blue-600 dark:text-slate-300 dark:hover:text-blue-400 transition-colors"
-                  >
-                    <span className="h-4 w-4">🛡️</span>
-                    隐私政策
-                  </a>
-                </div>
-                <button className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white p-3 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl">
-                  <span className="h-5 w-5">ℹ️</span>
-                  了解更多
-                </button>
-              </div>
             </div>
           </div>
 
@@ -708,49 +684,51 @@ const Register: React.FC = () => {
                   )}
 
                   {/* 提交按钮 */}
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="w-full relative overflow-hidden group bg-gradient-to-r from-blue-600 via-teal-600 to-green-600 hover:from-blue-700 hover:via-teal-700 hover:to-green-700 text-white font-bold py-5 px-8 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-[1.02] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-4 focus:ring-blue-300 dark:focus:ring-blue-800"
-                    aria-label="注册"
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                    <div className="relative z-10 flex justify-center items-center gap-3">
-                      {isLoading ? (
-                        <>
-                          <PulseLoader size={12} color="#ffffff" />
-                          <span className="text-lg">注册中...</span>
-                        </>
-                      ) : (
-                        <>
-                          <div className="bg-white/20 rounded-lg p-2">
-                            <span className="text-xl">🏥</span>
-                          </div>
-                          <span className="text-lg tracking-wide">安全注册</span>
-                          <div className="ml-2 transform group-hover:translate-x-1 transition-transform duration-300">
-                            <span className="text-lg">→</span>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </button>
+                  <div className="flex justify-center">
+                    <button
+                      type="submit"
+                      disabled={isLoading}
+                      className="w-3/4 relative overflow-hidden group bg-gradient-to-r from-sky-500 to-cyan-500 hover:from-sky-600 hover:to-cyan-600 text-white font-bold py-4 px-6 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-4 focus:ring-sky-300 dark:focus:ring-sky-800"
+                      aria-label="注册"
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                      <div className="relative z-10 flex justify-center items-center gap-2">
+                        {isLoading ? (
+                          <>
+                            <PulseLoader size={10} color="#ffffff" />
+                            <span className="text-base">注册中...</span>
+                          </>
+                        ) : (
+                          <>
+                            <div className="bg-white/20 rounded-lg p-1.5">
+                              <span className="text-lg">🏥</span>
+                            </div>
+                            <span className="text-base tracking-wide">安全注册</span>
+                            <div className="ml-1 transform group-hover:translate-x-1 transition-transform duration-300">
+                              <span className="text-base">→</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </button>
+                  </div>
 
                   {/* 登录链接 */}
-                  <div className="bg-gradient-to-r from-slate-50 to-blue-50 dark:from-slate-800 dark:to-slate-700 rounded-2xl p-6 mt-8 border border-slate-200 dark:border-slate-600 shadow-lg">
+                  <div className="bg-gradient-to-r from-sky-50 to-cyan-50 dark:from-sky-900/20 dark:to-cyan-900/20 rounded-xl p-4 mt-8 border-2 border-sky-200 dark:border-sky-700 shadow-md">
                     <div className="text-center">
-                      <p className="text-slate-700 dark:text-slate-300 font-semibold mb-4 text-lg">
+                      <p className="text-gray-700 dark:text-gray-300 font-medium mb-3 text-base">
                         已有账户？
                       </p>
                       <Link
                         to="/login"
-                        className="group inline-flex items-center justify-center gap-3 px-6 py-3 bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800 text-white font-bold rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-slate-300"
+                        className="group inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-sky-500 to-cyan-500 hover:from-sky-600 hover:to-cyan-600 text-white font-bold rounded-lg shadow-md hover:shadow-lg transform hover:scale-105 transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-sky-300"
                       >
                         <div className="bg-white/20 rounded-lg p-1">
-                          <span className="text-lg">🔑</span>
+                          <span className="text-sm">🔑</span>
                         </div>
-                        <span className="text-lg tracking-wide">立即登录</span>
+                        <span className="text-base tracking-wide">立即登录</span>
                         <div className="transform group-hover:translate-x-1 transition-transform duration-300">
-                          <span className="text-lg">→</span>
+                          <span className="text-base">→</span>
                         </div>
                       </Link>
                     </div>

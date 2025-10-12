@@ -365,29 +365,29 @@ export class ConnectionManager extends EventEmitter {
     try {
       switch (type) {
         case 'redis':
-          if (connection && typeof (connection as any).quit === 'function') {
-            await (connection as any).quit();
-          } else if (connection && typeof (connection as any).disconnect === 'function') {
-            (connection as any).disconnect();
+          if (connection && typeof (connection as Record<string, unknown>)['quit'] === 'function') {
+            await ((connection as Record<string, unknown>)['quit'] as (() => Promise<void> | void))();
+          } else if (connection && typeof (connection as Record<string, unknown>)['disconnect'] === 'function') {
+            ((connection as Record<string, unknown>)['disconnect'] as (() => void))();
           }
           break;
         case 'mysql':
-          if (connection && typeof (connection as any).end === 'function') {
-            await (connection as any).end();
-          } else if (connection && typeof (connection as any).destroy === 'function') {
-            (connection as any).destroy();
+          if (connection && typeof (connection as Record<string, unknown>)['end'] === 'function') {
+            await ((connection as Record<string, unknown>)['end'] as (() => Promise<void> | void))();
+          } else if (connection && typeof (connection as Record<string, unknown>)['destroy'] === 'function') {
+            ((connection as Record<string, unknown>)['destroy'] as (() => void))();
           }
           break;
         case 'websocket':
-          if (connection && typeof (connection as any).close === 'function') {
-            (connection as any).close();
+          if (connection && typeof (connection as Record<string, unknown>)['close'] === 'function') {
+            ((connection as Record<string, unknown>)['close'] as (() => void))();
           }
           break;
         default:
-          if (connection && typeof (connection as any).close === 'function') {
-            await (connection as any).close();
-          } else if (connection && typeof (connection as any).disconnect === 'function') {
-            await (connection as any).disconnect();
+          if (connection && typeof (connection as Record<string, unknown>)['close'] === 'function') {
+            await ((connection as Record<string, unknown>)['close'] as (() => Promise<void> | void))();
+          } else if (connection && typeof (connection as Record<string, unknown>)['disconnect'] === 'function') {
+            await ((connection as Record<string, unknown>)['disconnect'] as (() => Promise<void> | void))();
           }
       }
     } catch (error) {
@@ -405,12 +405,12 @@ export class ConnectionManager extends EventEmitter {
     try {
       if (!connection) return false;
 
-      if (typeof (connection as any).ping === 'function') {
-        const result = await (connection as any).ping();
+      if (typeof (connection as Record<string, unknown>)['ping'] === 'function') {
+        const result = await ((connection as Record<string, unknown>)['ping'] as () => Promise<string>)();
         return result === 'PONG';
       }
 
-      return (connection as any).status === 'ready';
+      return String((connection as Record<string, unknown>)['status']) === 'ready';
     } catch (error) {
       return false;
     }
@@ -423,13 +423,13 @@ export class ConnectionManager extends EventEmitter {
     try {
       if (!connection) return false;
 
-      if (typeof (connection as any).ping === 'function') {
-        await (connection as any).ping();
+      if (typeof (connection as Record<string, unknown>)['ping'] === 'function') {
+        await ((connection as Record<string, unknown>)['ping'] as () => Promise<void>)();
         return true;
       }
 
-      if (typeof (connection as any).query === 'function') {
-        await (connection as any).query('SELECT 1');
+      if (typeof (connection as Record<string, unknown>)['query'] === 'function') {
+        await ((connection as Record<string, unknown>)['query'] as (sql: string) => Promise<unknown>)('SELECT 1');
         return true;
       }
 
@@ -446,8 +446,8 @@ export class ConnectionManager extends EventEmitter {
     try {
       if (!connection) return false;
 
-      if (typeof (connection as any).id === 'function') {
-        await (connection as any).id();
+      if (typeof (connection as Record<string, unknown>)['id'] === 'function') {
+        await ((connection as Record<string, unknown>)['id'] as () => Promise<unknown>)();
         return true;
       }
 
@@ -465,7 +465,7 @@ export class ConnectionManager extends EventEmitter {
       if (!connection) return false;
 
       // Fabric连接通常是Gateway或Network对象
-      if (typeof (connection as any).getNetwork === 'function') {
+      if (typeof (connection as Record<string, unknown>)['getNetwork'] === 'function') {
         return true;
       }
 
@@ -482,7 +482,7 @@ export class ConnectionManager extends EventEmitter {
     try {
       if (!connection) return false;
 
-      return (connection as any).readyState === 1; // WebSocket.OPEN
+      return Number((connection as Record<string, unknown>)['readyState']) === 1; // WebSocket.OPEN
     } catch (error) {
       return false;
     }

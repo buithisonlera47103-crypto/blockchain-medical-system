@@ -22,14 +22,9 @@ export function initTracing(): void {
   sdk = new NodeSDK({
     // Resource with service name can be provided via environment variable
     // OTEL_SERVICE_NAME; we also set deployment env via env if needed.
-    traceExporter,
+    traceExporter: traceExporter as unknown as import('@opentelemetry/sdk-trace-base').SpanExporter,
     instrumentations: [
-      getNodeAutoInstrumentations({
-        '@opentelemetry/instrumentation-http': { enabled: true },
-        '@opentelemetry/instrumentation-express': { enabled: true },
-        '@opentelemetry/instrumentation-mysql2': { enabled: true },
-        '@opentelemetry/instrumentation-ioredis': { enabled: true },
-      }),
+      getNodeAutoInstrumentations(),
     ],
   });
 

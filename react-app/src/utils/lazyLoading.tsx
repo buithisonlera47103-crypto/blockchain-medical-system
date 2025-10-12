@@ -230,11 +230,11 @@ export function createLazyComponentWithHints<T extends ComponentType<any>>(
 
 // Bundle splitting utilities
 export const LazyComponents = {
-  // Dashboard components
-  Dashboard: createLazyRoute(() => import('../components/Dashboard'), 'Dashboard'),
+  // Dashboard components (已移除，使用NewDashboard)
+  // Dashboard: createLazyRoute(() => import('../components/Dashboard'), 'Dashboard'),
 
-  // Medical Records components
-  MedicalRecords: createLazyRoute(() => import('../components/MedicalRecords'), 'Medical Records'),
+  // Medical Records components (已移除，功能整合到NewDashboard)
+  // MedicalRecords: createLazyRoute(() => import('../components/MedicalRecords'), 'Medical Records'),
 
   // User Management components
   // UserManagement: createLazyRoute(
@@ -248,8 +248,8 @@ export const LazyComponents = {
   //   'Analytics'
   // ), // Component not found
 
-  // Settings components
-  Settings: createLazyRoute(() => import('../components/Settings'), 'Settings'),
+  // Settings components (已移除，无实际组件)
+  // Settings: createLazyRoute(() => import('../components/Settings'), 'Settings'),
 
   // Reports components
   // Reports: createLazyRoute(

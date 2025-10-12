@@ -1,0 +1,302 @@
+/**
+ * 管理员面板样式
+ * MedChain Admin Panel - 信息安全竞赛版
+ */
+
+/* 主题色变量 */
+:root {
+  /* 医疗主题色 */
+  --admin-primary: #1890ff;
+  --admin-success: #52c41a;
+  --admin-warning: #faad14;
+  --admin-error: #f5222d;
+  --admin-info: #722ed1;
+
+  /* 科技感色彩 */
+  --tech-purple: #722ed1;
+  --tech-cyan: #13c2c2;
+  --tech-orange: #fa8c16;
+  --tech-pink: #eb2f96;
+
+  /* 中性色 */
+  --gray-1: #fafafa;
+  --gray-2: #f5f5f5;
+  --gray-3: #f0f0f0;
+  --gray-4: #d9d9d9;
+  --gray-5: #bfbfbf;
+  --gray-6: #8c8c8c;
+  --gray-7: #595959;
+  --gray-8: #434343;
+  --gray-9: #262626;
+  --gray-10: #1f1f1f;
+
+  /* 布局尺寸 */
+  --admin-header-height: 64px;
+  --admin-sidebar-width: 260px;
+  --admin-sidebar-collapsed: 80px;
+  --admin-content-padding: 24px;
+
+  /* 阴影 */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+
+  /* 动画 */
+  --transition-base: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 主布局 */
+.admin-layout {
+  min-height: 100vh;
+  background: var(--gray-2);
+}
+
+/* 内容区域 */
+.admin-content {
+  padding: var(--admin-content-padding);
+  background: var(--gray-2);
+  min-height: calc(100vh - var(--admin-header-height));
+  overflow-y: auto;
+}
+
+.admin-content-wrapper {
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .admin-content {
+    padding: 16px;
+  }
+}
+
+/* 卡片样式 */
+.admin-card {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition-base);
+}
+
+.admin-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+/* 页面标题 */
+.admin-page-header {
+  margin-bottom: 24px;
+}
+
+.admin-page-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--gray-9);
+  margin: 0;
+}
+
+.admin-page-description {
+  font-size: 14px;
+  color: var(--gray-6);
+  margin-top: 8px;
+}
+
+/* 统计卡片 */
+.admin-stat-card {
+  background: linear-gradient(135deg, var(--admin-primary) 0%, #40a9ff 100%);
+  border-radius: 12px;
+  padding: 20px;
+  color: white;
+  box-shadow: var(--shadow-md);
+  transition: var(--transition-base);
+}
+
+.admin-stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+
+.admin-stat-card.success {
+  background: linear-gradient(135deg, var(--admin-success) 0%, #73d13d 100%);
+}
+
+.admin-stat-card.warning {
+  background: linear-gradient(135deg, var(--admin-warning) 0%, #ffc53d 100%);
+}
+
+.admin-stat-card.error {
+  background: linear-gradient(135deg, var(--admin-error) 0%, #ff4d4f 100%);
+}
+
+.admin-stat-card.purple {
+  background: linear-gradient(135deg, var(--tech-purple) 0%, #9254de 100%);
+}
+
+/* 加载动画 */
+.admin-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+}
+
+/* 空状态 */
+.admin-empty {
+  text-align: center;
+  padding: 48px 0;
+}
+
+.admin-empty-icon {
+  font-size: 64px;
+  color: var(--gray-4);
+  margin-bottom: 16px;
+}
+
+.admin-empty-text {
+  font-size: 14px;
+  color: var(--gray-6);
+}
+
+/* 表格样式 */
+.admin-table {
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.admin-table .ant-table {
+  background: transparent;
+}
+
+.admin-table .ant-table-thead > tr > th {
+  background: var(--gray-1);
+  font-weight: 600;
+  color: var(--gray-8);
+}
+
+/* 状态标签 */
+.admin-status-tag {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.admin-status-tag.online {
+  background: #f6ffed;
+  color: #52c41a;
+}
+
+.admin-status-tag.offline {
+  background: #fff1f0;
+  color: #f5222d;
+}
+
+.admin-status-tag.syncing {
+  background: #e6f7ff;
+  color: #1890ff;
+}
+
+/* 图表容器 */
+.admin-chart-container {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-chart-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--gray-8);
+  margin-bottom: 16px;
+}
+
+/* 动画效果 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.admin-fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+/* 响应式栅格 */
+.admin-grid {
+  display: grid;
+  gap: 24px;
+}
+
+.admin-grid-cols-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.admin-grid-cols-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.admin-grid-cols-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 1200px) {
+  .admin-grid-cols-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .admin-grid-cols-2,
+  .admin-grid-cols-3,
+  .admin-grid-cols-4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 工具栏 */
+.admin-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding: 16px 24px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-toolbar-left {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.admin-toolbar-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* 操作按钮组 */
+.admin-action-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-action-buttons .ant-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+

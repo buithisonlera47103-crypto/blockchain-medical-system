@@ -16,9 +16,25 @@ router.get(
   '/status',
   asyncHandler(async (_req, res: Response): Promise<void> => {
     try {
-      const connected = await ipfsService.checkConnection();
-      const nodeInfo = connected ? await ipfsService.getNodeInfo() : null;
-      const storageStats = connected ? await ipfsService.getStorageStats() : null;
+      // Add timeout wrapper to prevent hanging
+      const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> => {
+        const timeoutPromise = new Promise<null>((_, reject) => {
+          setTimeout(() => reject(new Error(`Operation timed out after ${timeoutMs}ms`)), timeoutMs);
+        });
+
+        try {
+          return await Promise.race([promise, timeoutPromise]);
+        } catch (error) {
+          if (error instanceof Error && error.message.includes('timed out')) {
+            return null;
+          }
+          throw error;
+        }
+      };
+
+      const connected = await withTimeout(ipfsService.checkConnection(), 5000) ?? false;
+      const nodeInfo = connected ? await withTimeout(ipfsService.getNodeInfo(), 3000) : null;
+      const storageStats = connected ? await withTimeout(ipfsService.getStorageStats(), 3000) : null;
 
       res.status(200).json({
         connected,

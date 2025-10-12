@@ -9,6 +9,7 @@ import { body, query } from 'express-validator';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { authenticateToken } from '../middleware/auth';
 import { validateInput } from '../middleware/validation';
+import { auditService } from '../services/AuditService';
 import { EnhancedAuthRequest } from '../types/express-extensions';
 import ApiResponseBuilder from '../utils/ApiResponseBuilder';
 import { AppError } from '../utils/AppError';
@@ -144,6 +145,7 @@ router.post(
         score: 100
       };
 
+      const requestId = req.get('X-Request-ID') ?? req.get('x-request-id') ?? undefined;
       // 记录扫描结果
       logger.info('OWASP安全扫描完成', {
         userId: req.user?.id,
@@ -152,6 +154,16 @@ router.post(
         passedTests: 10,
         failedTests: 0,
         overallRisk: 'low',
+        requestId,
+      });
+      // 审计：记录安全扫描
+      void auditService.logEvent({
+        userId: req.user?.id,
+        action: 'security_scan_owasp',
+        resource: req.originalUrl,
+        details: { requestId, totalTests: 10, passedTests: 10, failedTests: 0 },
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent') ?? undefined,
       });
 
       res.json(ApiResponseBuilder.success(scanReport, 'OWASP安全扫描完成'));
@@ -226,9 +238,20 @@ router.get(
         duration: 120000, // 2分钟
       };
 
+      const requestId = req.get('X-Request-ID') ?? req.get('x-request-id') ?? undefined;
       logger.info('获取安全扫描结果', {
         userId: req.user?.id,
         scanId,
+        requestId,
+      });
+      // 审计：读取安全扫描结果
+      void auditService.logEvent({
+        userId: req.user?.id,
+        action: 'security_scan_results_read',
+        resource: req.originalUrl,
+        details: { requestId, scanId },
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent') ?? undefined,
       });
 
       res.json(ApiResponseBuilder.success(scanResult, '安全扫描结果获取成功'));
@@ -449,11 +472,22 @@ router.patch(
         comment,
       };
 
+      const requestId = req.get('X-Request-ID') ?? req.get('x-request-id') ?? undefined;
       logger.info('更新漏洞状态', {
         userId: req.user?.id,
         vulnId,
         newStatus: status,
         comment,
+        requestId,
+      });
+      // 审计：更新漏洞状态
+      void auditService.logEvent({
+        userId: req.user?.id,
+        action: 'vulnerability_status_update',
+        resource: req.originalUrl,
+        details: { requestId, vulnId, newStatus: status, comment },
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent') ?? undefined,
       });
 
       res.json(ApiResponseBuilder.success(updateResult, '漏洞状态更新成功'));
@@ -550,10 +584,21 @@ router.get(
         ],
       };
 
+      const requestId = req.get('X-Request-ID') ?? req.get('x-request-id') ?? undefined;
       logger.info('生成安全合规报告', {
         userId: req.user?.id,
         reportId: complianceReport.reportId,
         format,
+        requestId,
+      });
+      // 审计：生成安全合规报告
+      void auditService.logEvent({
+        userId: req.user?.id,
+        action: 'security_compliance_report_generated',
+        resource: req.originalUrl,
+        details: { requestId, reportId: complianceReport.reportId, format },
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent') ?? undefined,
       });
 
       if (format === 'pdf') {

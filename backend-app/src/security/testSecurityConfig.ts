@@ -37,44 +37,50 @@ export class TestSecurityConfig {
       })
     );
 
-    // Global rate limiter
-    const limiter = rateLimit({
-      windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 1000, // Limit each IP to 1000 requests per windowMs
-      message: {
-        error: 'Too many requests from this IP, please try again later.',
-        code: 'RATE_LIMIT_EXCEEDED',
-      },
-      standardHeaders: true,
-      legacyHeaders: false,
-    });
-    app.use(limiter);
+    // 开发环境禁用速率限制，测试环境使用宽松限制
+    const isDev = process.env.NODE_ENV === 'development';
+    const disableRateLimit = isDev || process.env.DISABLE_RATE_LIMIT === 'true';
 
-    // API rate limiter
-    const apiLimiter = rateLimit({
-      windowMs: 1 * 60 * 1000, // 1 minute
-      max: 100, // Limit each IP to 100 API requests per minute
-      message: {
-        error: 'Too many API requests, please slow down.',
-        code: 'API_RATE_LIMIT_EXCEEDED',
-      },
-      standardHeaders: true,
-      legacyHeaders: false,
-    });
-    app.use('/api/', apiLimiter);
+    if (!disableRateLimit) {
+      // Global rate limiter - 非常宽松的限制
+      const limiter = rateLimit({
+        windowMs: 15 * 60 * 1000, // 15 minutes
+        max: 100000, // 极高限制，基本不会触发
+        message: {
+          error: 'Too many requests from this IP, please try again later.',
+          code: 'RATE_LIMIT_EXCEEDED',
+        },
+        standardHeaders: true,
+        legacyHeaders: false,
+      });
+      app.use(limiter);
 
-    // Auth rate limiter
-    const authLimiter = rateLimit({
-      windowMs: 5 * 60 * 1000, // 5 minutes
-      max: 10, // Limit each IP to 10 auth requests per 5 minutes
-      message: {
-        error: 'Too many authentication attempts, please try again later.',
-        code: 'AUTH_RATE_LIMIT_EXCEEDED',
-      },
-      standardHeaders: true,
-      legacyHeaders: false,
-    });
-    app.use(['/api/auth/login', '/api/auth/register'], authLimiter);
+      // API rate limiter - 宽松限制
+      const apiLimiter = rateLimit({
+        windowMs: 1 * 60 * 1000, // 1 minute
+        max: 10000, // 每分钟10000次请求
+        message: {
+          error: 'Too many API requests, please slow down.',
+          code: 'API_RATE_LIMIT_EXCEEDED',
+        },
+        standardHeaders: true,
+        legacyHeaders: false,
+      });
+      app.use('/api/', apiLimiter);
+
+      // Auth rate limiter - 宽松限制
+      const authLimiter = rateLimit({
+        windowMs: 5 * 60 * 1000, // 5 minutes
+        max: 1000, // 5分钟1000次
+        message: {
+          error: 'Too many authentication attempts, please try again later.',
+          code: 'AUTH_RATE_LIMIT_EXCEEDED',
+        },
+        standardHeaders: true,
+        legacyHeaders: false,
+      });
+      app.use(['/api/auth/login', '/api/auth/register'], authLimiter);
+    }
   }
 
   /**

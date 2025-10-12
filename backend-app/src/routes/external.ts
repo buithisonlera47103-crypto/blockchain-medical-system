@@ -5,10 +5,9 @@
 
 import express, { Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
-import { body, query, validationResult } from 'express-validator';
+import { body, validationResult } from 'express-validator';
 
 import { asyncHandler } from '../middleware/asyncHandler';
-import { AuthenticatedRequest, authenticateToken } from '../middleware/auth';
 import { ExternalIntegrationService } from '../services/ExternalIntegrationService';
 import { logger } from '../utils/logger';
 
@@ -27,31 +26,7 @@ const oauth2RateLimit = rateLimit({
   legacyHeaders: false,
 });
 
-// 生物识别限流：每分钟最多5次
-const biometricRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 5,
-  message: {
-    error: 'BIOMETRIC_RATE_LIMIT_EXCEEDED',
-    message: '生物识别请求过于频繁，请稍后再试',
-    statusCode: 429,
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
-// 联邦学习限流：每小时最多20次
-const federatedLearningRateLimit = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 20,
-  message: {
-    error: 'FEDERATED_LEARNING_RATE_LIMIT_EXCEEDED',
-    message: '联邦学习请求过于频繁，请稍后再试',
-    statusCode: 429,
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 /**
  * @swagger

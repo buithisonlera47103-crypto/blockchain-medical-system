@@ -5,10 +5,12 @@
 import * as crypto from 'crypto';
 
 import { RowDataPacket, ResultSetHeader, PoolConnection } from 'mysql2/promise';
-import NodeCache from 'node-cache';
 import { v4 as uuidv4 } from 'uuid';
 
 import { SimpleLogger } from '../utils/logger';
+import { getRedisClient } from '../utils/redisClient';
+
+import { cacheService } from './CacheService';
 
 /**
  * 数据库连接池接口
@@ -171,19 +173,15 @@ interface ChatConfig {
  */
 export class ChatService {
   private readonly pool: DatabasePool;
-  private readonly cache: NodeCache;
   private readonly logger: SimpleLogger;
   private readonly encryptionKey: string;
   private readonly config: ChatConfig;
+  // L1 in-process map for online users; L2 Redis via cacheService for persistence
+  private readonly onlineUsers: Map<string, CachedUser> = new Map();
 
   constructor(database: DatabasePool, logger: SimpleLogger) {
     this.pool = database;
     this.logger = logger;
-    this.cache = new NodeCache({
-      stdTTL: 3600, // 1小时缓存
-      checkperiod: 600, // 10分钟检查过期
-      useClones: false,
-    });
 
     // 从环境变量获取加密密钥
     this.encryptionKey = process.env.CHAT_ENCRYPTION_KEY ?? this.generateEncryptionKey();
@@ -269,7 +267,7 @@ export class ChatService {
       // 确保用户ID顺序一致，便于缓存和查询
       const [userId1, userId2] = [user1Id, user2Id].sort((a, b) => a.localeCompare(b));
       const cacheKey = `conversation:${userId1}:${userId2}`;
-      const cachedConversation = this.cache.get<CachedConversation>(cacheKey);
+      const cachedConversation = await cacheService.get<CachedConversation>(cacheKey);
 
       if (cachedConversation) {
         return cachedConversation.conversationId;
@@ -303,12 +301,12 @@ export class ChatService {
           );
         }
 
-        // 缓存对话信息
-        this.cache.set(cacheKey, {
+        // 缓存对话信息（TTL 3600秒）
+        await cacheService.set(cacheKey, {
           conversationId,
           participants: [userId1, userId2],
           createdAt: Date.now(),
-        });
+        }, 3600);
 
         return conversationId;
       } finally {
@@ -763,10 +761,7 @@ export class ChatService {
    * 获取在线用户缓存
    */
   getOnlineUsers(): CachedUser[] {
-    const keys = this.cache.keys().filter(key => key.startsWith('user:online:'));
-    return keys
-      .map(key => this.cache.get<CachedUser>(key))
-      .filter((user): user is CachedUser => !!user?.isOnline);
+    return Array.from(this.onlineUsers.values()).filter(u => u.isOnline);
   }
 
   /**
@@ -774,7 +769,7 @@ export class ChatService {
    */
   setUserOnline(userId: string, username: string, role: string, socketId: string): void {
     const cacheKey = `user:online:${userId}`;
-    const existingUser = this.cache.get<CachedUser>(cacheKey);
+    const existingUser = this.onlineUsers.get(userId) ?? null;
 
     const user: CachedUser = {
       userId,
@@ -785,7 +780,21 @@ export class ChatService {
       isOnline: true,
     };
 
-    this.cache.set(cacheKey, user);
+    this.onlineUsers.set(userId, user);
+
+    // Mirror to Redis-backed cache asynchronously
+    void (async (): Promise<void> => {
+      try {
+        await cacheService.set(cacheKey, user, 3600);
+        const pipe = getRedisClient().pipeline();
+        pipe.sadd('chat:online_users', userId);
+        pipe.expire('chat:online_users', 3600);
+        await pipe.exec();
+      } catch (err) {
+        this.logger.warn('Failed to persist online user state to Redis', { userId, error: err });
+      }
+    })();
+
     this.logger.debug('User set online', { userId, socketId });
   }
 
@@ -794,7 +803,7 @@ export class ChatService {
    */
   setUserOffline(userId: string, socketId: string): void {
     const cacheKey = `user:online:${userId}`;
-    const user = this.cache.get<CachedUser>(cacheKey);
+    const user = this.onlineUsers.get(userId);
 
     if (user) {
       user.socketIds = user.socketIds.filter(id => id !== socketId);
@@ -802,9 +811,25 @@ export class ChatService {
 
       if (user.socketIds.length === 0) {
         user.isOnline = false;
-        this.cache.del(cacheKey);
+        this.onlineUsers.delete(userId);
+
+        void (async (): Promise<void> => {
+          try {
+            await cacheService.delete(cacheKey);
+            // Optional: allow the online set to expire; removal is non-critical for functionality
+          } catch (err) {
+            this.logger.warn('Failed to remove online user from Redis', { userId, error: err });
+          }
+        })();
       } else {
-        this.cache.set(cacheKey, user);
+        this.onlineUsers.set(userId, user);
+        void (async (): Promise<void> => {
+          try {
+            await cacheService.set(cacheKey, user, 3600);
+          } catch (err) {
+            this.logger.warn('Failed to update online user in Redis', { userId, error: err });
+          }
+        })();
       }
     }
 
@@ -815,8 +840,7 @@ export class ChatService {
    * 获取用户在线状态
    */
   isUserOnline(userId: string): boolean {
-    const cacheKey = `user:online:${userId}`;
-    const user = this.cache.get<CachedUser>(cacheKey);
+    const user = this.onlineUsers.get(userId);
     return user?.isOnline ?? false;
   }
 }

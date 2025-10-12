@@ -168,7 +168,9 @@ export const apiRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15分钟
   // 自适应阈值：基于路径类别和运行时“高负载”开关动态调整
   max: (req: Request, _res: Response): number => {
-    const base = Number(process.env.API_RATE_LIMIT_MAX ?? '100');
+    // 开发环境使用更宽松的限制
+    const isDev = process.env.NODE_ENV === 'development';
+    const base = Number(process.env.API_RATE_LIMIT_MAX ?? (isDev ? '10000' : '100'));
     const highLoad = (process.env.HIGH_LOAD ?? '').toLowerCase() === 'true';
     const pathFactor = req.path.includes('/search') ? 0.5 : 1; // 搜索更严格
     const loadFactor = highLoad ? 0.3 : 1; // 高负载时收紧
@@ -186,8 +188,14 @@ export const apiRateLimit = rateLimit({
   keyGenerator: req => generateRateLimitKey(req, 'api'),
   handler: rateLimitHandler,
   skip: req => {
-    // 跳过健康检查端点
-    return req.path === '/health' || req.path === '/api/v1/health';
+    // 跳过健康检查与监控探针端点（避免阻塞探活与指标采集）
+    const p = req.path;
+    return (
+      p === '/health' ||
+      p === '/api/v1/health' ||
+      p.startsWith('/api/v1/monitoring/') ||
+      p.startsWith('/fabricz/') // 内置快速诊断端点
+    );
   },
 });
 

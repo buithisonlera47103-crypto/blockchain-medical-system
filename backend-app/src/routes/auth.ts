@@ -3,6 +3,8 @@
  */
 
 import crypto from 'crypto';
+import * as fs from 'fs';
+
 
 // Lazy-load bcrypt to avoid native binding during perf-only runs
 let __bcrypt: (typeof import('bcrypt')) | undefined;
@@ -90,10 +92,39 @@ function getPermissionsByRole(role?: string): string[] {
   }
 }
 
-// 登录限流：临时禁用以便测试
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15分钟
-  max: 1000, // 大幅提高限制以便测试
+// JWT Key ID for rotation and JWKS exposure
+const JWT_KID = (process.env.JWT_KID ?? 'primary').trim();
+
+// JWKS endpoint for clients to fetch public keys
+router.get('/.well-known/jwks.json', asyncHandler(async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const pub = process.env.JWT_PUBLIC_KEY;
+    const pubPath = process.env.JWT_PUBLIC_KEY_PATH;
+    let publicKey: string | undefined = (pub && pub.trim() !== '') ? pub : undefined;
+    if (!publicKey && pubPath && pubPath.trim() !== '') {
+      try { publicKey = fs.readFileSync(pubPath, 'utf8'); } catch { /* ignore */ }
+    }
+    if (!publicKey) {
+      res.status(500).json({ error: 'SERVER_MISCONFIGURED', message: 'Missing JWT_PUBLIC_KEY or JWT_PUBLIC_KEY_PATH', statusCode: 500 });
+      return;
+    }
+    const keyObj = crypto.createPublicKey(publicKey);
+    const jwk = keyObj.export({ format: 'jwk' }) as unknown as Record<string, unknown>;
+    const jwkOut: Record<string, unknown> = { ...jwk, alg: 'RS256', use: 'sig', kid: JWT_KID };
+    res.json({ keys: [jwkOut] });
+  } catch (e) {
+    // 记录详细错误，避免静默
+    console.error('JWKS endpoint error:', (e as Error)?.message ?? String(e));
+    res.status(500).json({ error: 'SERVER_ERROR', message: 'Failed to produce JWKS', statusCode: 500 });
+  }
+}));
+// 修复: 在模块加载时立即创建rate limiter实例，而不是在请求处理时延迟创建
+// 这符合express-rate-limit的最佳实践，避免ERR_ERL_CREATED_IN_REQUEST_HANDLER错误
+
+// 登录限流（生产默认较严格，可通过环境变量调整）
+const _loginLimiterInner = rateLimit({
+  windowMs: parseInt(process.env.LOGIN_RATE_WINDOW_MS ?? '900000'), // 默认15分钟
+  max: parseInt(process.env.LOGIN_RATE_MAX ?? '5'), // 默认每窗口5次
   message: {
     error: 'TOO_MANY_LOGIN_ATTEMPTS',
     message: '登录尝试过于频繁，请稍后再试',
@@ -101,13 +132,20 @@ const loginLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => true, // 临时跳过所有请求
+  skip: (_req) => {
+    // 在测试环境或明确禁用时跳过限流
+    return (process.env.NODE_ENV === 'test') ||
+           ((process.env.DISABLE_RATE_LIMIT ?? '').toLowerCase() === 'true') ||
+           ((process.env.ENABLE_RATE_LIMIT ?? '').toLowerCase() === 'false');
+  }
 });
 
-// 注册限流：临时禁用以便测试
-const registerLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1小时
-  max: 1000, // 大幅提高限制以便测试
+const loginLimiter: express.RequestHandler = _loginLimiterInner;
+
+// 注册限流（生产默认严格，可通过环境变量调整）
+const _registerLimiterInner = rateLimit({
+  windowMs: parseInt(process.env.REGISTER_RATE_WINDOW_MS ?? '3600000'), // 默认1小时
+  max: parseInt(process.env.REGISTER_RATE_MAX ?? '3'), // 默认每窗口3次
   message: {
     error: 'TOO_MANY_REGISTER_ATTEMPTS',
     message: '注册尝试过于频繁，请稍后再试',
@@ -115,8 +153,15 @@ const registerLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => true, // 临时跳过所有请求
+  skip: (_req) => {
+    // 在测试环境或明确禁用时跳过限流
+    return (process.env.NODE_ENV === 'test') ||
+           ((process.env.DISABLE_RATE_LIMIT ?? '').toLowerCase() === 'true') ||
+           ((process.env.ENABLE_RATE_LIMIT ?? '').toLowerCase() === 'false');
+  }
 });
+
+const registerLimiter: express.RequestHandler = _registerLimiterInner;
 
 // 验证注册请求（适当放宽）：
 // - 用户名允许字母/数字/下划线/点/连字符
@@ -500,7 +545,7 @@ router.post(
           details: errors.array(),
           statusCode: 400,
         });
-
+        return; // 修复: 添加return语句，避免继续执行导致重复发送响应
       }
 
       const { username, password } = req.body;
@@ -545,7 +590,16 @@ router.post(
       }
 
       // 生成JWT令牌（包含权限）
-      const jwtSecret = process.env.JWT_SECRET ?? 'your-secret-key';
+      const priv = process.env.JWT_PRIVATE_KEY;
+      const privPath = process.env.JWT_PRIVATE_KEY_PATH;
+      let privateKey: string | undefined = (priv && priv.trim() !== '') ? priv : undefined;
+      if (!privateKey && privPath && privPath.trim() !== '') {
+        try { privateKey = fs.readFileSync(privPath, 'utf8'); } catch { void 0; }
+      }
+      if (!privateKey) {
+        res.status(500).json({ error: 'SERVER_MISCONFIGURED', message: 'Missing JWT_PRIVATE_KEY or JWT_PRIVATE_KEY_PATH', statusCode: 500 });
+        return;
+      }
       const permissions = getPermissionsByRole(user.role ?? undefined);
       const token = sign(
         {
@@ -555,12 +609,12 @@ router.post(
           role: user.role,
           permissions,
         },
-        jwtSecret,
-        { expiresIn: '24h' }
+        privateKey,
+        { algorithm: 'RS256', keyid: JWT_KID, expiresIn: '24h' }
       );
 
       // 生成刷新令牌
-      const refreshToken = sign({ id: user.id }, jwtSecret, { expiresIn: '7d' });
+      const refreshToken = sign({ id: user.id }, privateKey, { algorithm: 'RS256', keyid: JWT_KID, expiresIn: '7d' });
 
       // 更新最后登录时间
       await pool.query('UPDATE users SET last_login_at = NOW() WHERE user_id = ?', [user.id]);
@@ -663,11 +717,20 @@ router.post(
       }
 
       const { refreshToken } = req.body;
-      const jwtSecret = process.env.JWT_SECRET ?? 'your-secret-key';
+      const pub = process.env.JWT_PUBLIC_KEY;
+      const pubPath = process.env.JWT_PUBLIC_KEY_PATH;
+      let publicKey: string | undefined = (pub && pub.trim() !== '') ? pub : undefined;
+      if (!publicKey && pubPath && pubPath.trim() !== '') {
+        try { publicKey = fs.readFileSync(pubPath, 'utf8'); } catch { void 0; }
+      }
+      if (!publicKey) {
+        res.status(500).json({ error: 'SERVER_MISCONFIGURED', message: 'Missing JWT_PUBLIC_KEY or JWT_PUBLIC_KEY_PATH', statusCode: 500 });
+        return;
+      }
 
       try {
         // 验证刷新令牌
-        const decoded = verify(refreshToken, jwtSecret) as { id: string };
+        const decoded = verify(refreshToken, publicKey, { algorithms: ['RS256'] }) as { id: string };
 
         // 查找用户
         const [users] = (await pool.query(
@@ -697,6 +760,18 @@ router.post(
           return;
         }
 
+        // 加载私钥用于签发新的令牌
+        const priv = process.env.JWT_PRIVATE_KEY;
+        const privPath = process.env.JWT_PRIVATE_KEY_PATH;
+        let privateKey: string | undefined = (priv && priv.trim() !== '') ? priv : undefined;
+        if (!privateKey && privPath && privPath.trim() !== '') {
+          try { privateKey = fs.readFileSync(privPath, 'utf8'); } catch { void 0; }
+        }
+        if (!privateKey) {
+          res.status(500).json({ error: 'SERVER_MISCONFIGURED', message: 'Missing JWT_PRIVATE_KEY or JWT_PRIVATE_KEY_PATH', statusCode: 500 });
+          return;
+        }
+
         // 生成新的访问令牌（包含权限）
         const permissions = getPermissionsByRole(user.role ?? undefined);
         const newToken = sign(
@@ -707,12 +782,12 @@ router.post(
             role: user.role,
             permissions,
           },
-          jwtSecret,
-          { expiresIn: '24h' }
+          privateKey,
+          { algorithm: 'RS256', keyid: JWT_KID, expiresIn: '24h' }
         );
 
         // 生成新的刷新令牌
-        const newRefreshToken = sign({ id: user.id }, jwtSecret, { expiresIn: '7d' });
+        const newRefreshToken = sign({ id: user.id }, privateKey, { algorithm: 'RS256', keyid: JWT_KID, expiresIn: '7d' });
 
         res.json({
           token: newToken,

@@ -7,7 +7,6 @@ import { toast } from 'react-toastify';
 
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { runDiagnostics, exportDiagnosticReport } from '../utils/diagnostics';
 
 type LoginFormData = {
   username: string;
@@ -50,7 +49,6 @@ const Login: React.FC = () => {
 
   const [formError, setFormError] = useState('');
   const [isShaking, setIsShaking] = useState(false);
-  const [isDiagnosticRunning, setIsDiagnosticRunning] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState<PasswordStrength>({
     score: 0,
     label: '',
@@ -110,38 +108,6 @@ const Login: React.FC = () => {
       toast.error(error instanceof Error ? error.message : t('auth.errors.loginFailed'));
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleRunDiagnostics = async () => {
-    setIsDiagnosticRunning(true);
-    try {
-      console.clear();
-      console.log('🔍 ' + t('auth.login.runningDiagnostics'));
-      const report = await runDiagnostics();
-
-      const { summary } = report;
-      if (summary.error > 0) {
-        toast.error(
-          `${t('auth.login.diagnostics')} ${summary.error} errors found, check console for details`
-        );
-      } else if (summary.warning > 0) {
-        toast.warning(
-          `${t('auth.login.diagnostics')} ${summary.warning} warnings found, check console for details`
-        );
-      } else {
-        toast.success(t('auth.login.diagnostics') + ' completed, all checks passed');
-      }
-
-      if (window.confirm('Export diagnostic report to file?')) {
-        exportDiagnosticReport(report);
-        toast.info('Diagnostic report exported');
-      }
-    } catch (error) {
-      console.error('Error during diagnostics:', error);
-      toast.error('Error during diagnostics, check console');
-    } finally {
-      setIsDiagnosticRunning(false);
     }
   };
 
@@ -645,86 +611,41 @@ const Login: React.FC = () => {
                   )}
 
                   {/* Submit Button */}
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="w-full flex justify-center items-center gap-3 py-5 px-6 text-lg font-bold rounded-xl bg-gradient-to-r from-sky-500 via-cyan-500 to-blue-500 hover:from-sky-600 hover:via-cyan-600 hover:to-blue-600 text-white transition-all duration-300 shadow-xl hover:shadow-2xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                    aria-label={t('auth.login.submit')}
-                  >
-                    {isLoading ? (
-                      <>
-                        <PulseLoader size={12} color="white" className="animate-pulse" />
-                        <span>{t('auth.login.loggingIn')}</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="h-5 w-5">🚪</span>
-                        <span>{t('auth.login.submit')}</span>
-                      </>
-                    )}
-                  </button>
-
-                  {/* Register Link */}
-                  <div className="text-center mt-8">
-                    <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">
-                      {t('auth.login.noAccount')}
-                    </span>
-                    <Link
-                      to="/register"
-                      className="ml-2 text-sm text-sky-500 hover:text-sky-600 dark:hover:text-sky-400 transition-colors duration-300 font-bold hover:underline"
-                    >
-                      {t('auth.login.registerNow')}
-                    </Link>
-                  </div>
-
-                  {/* Demo Credentials */}
-                  <div className="mt-8 p-6 bg-gradient-to-r from-sky-50 to-cyan-50 dark:from-sky-900/20 dark:to-cyan-900/20 rounded-xl border-2 border-sky-200 dark:border-sky-700 shadow-lg">
-                    <div className="flex items-center justify-center gap-2 mb-2">
-                      <span className="h-4 w-4 text-sky-500">ℹ️</span>
-                      <span className="text-sm font-bold text-gray-900 dark:text-white">
-                        {t('auth.login.demoAccounts')}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-900 dark:text-white text-center font-medium leading-relaxed">
-                      <span className="bg-sky-100 dark:bg-sky-900/30 text-sky-800 dark:text-sky-300 px-2 py-1 rounded">
-                        {t('auth.login.username')}: admin
-                      </span>
-                      <span className="mx-2">•</span>
-                      <span className="bg-cyan-100 dark:bg-cyan-900/30 text-cyan-800 dark:text-cyan-300 px-2 py-1 rounded">
-                        {t('auth.login.password')}: admin
-                      </span>
-                    </p>
-                  </div>
-
-                  {/* Debug Diagnostics Button */}
-                  <div className="mt-6 p-4 bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 rounded-xl border-2 border-yellow-200 dark:border-yellow-700 shadow-lg">
-                    <div className="flex items-center justify-center gap-2 mb-3">
-                      <span className="h-4 w-4 text-yellow-600">🔍</span>
-                      <span className="text-sm font-bold text-gray-900 dark:text-white">
-                        系统诊断
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-700 dark:text-gray-300 text-center mb-3">
-                      如果遇到登录或访问问题，点击下方按钮运行系统诊断
-                    </p>
+                  <div className="flex justify-center">
                     <button
-                      type="button"
-                      onClick={handleRunDiagnostics}
-                      disabled={isDiagnosticRunning}
-                      className="w-full flex justify-center items-center gap-2 py-3 px-4 text-sm font-bold rounded-lg bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                      type="submit"
+                      disabled={isLoading}
+                      className="w-3/4 flex justify-center items-center gap-3 py-5 px-6 text-lg font-bold rounded-xl bg-gradient-to-r from-sky-500 via-cyan-500 to-blue-500 hover:from-sky-600 hover:via-cyan-600 hover:to-blue-600 text-white transition-all duration-300 shadow-xl hover:shadow-2xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                      aria-label={t('auth.login.submit')}
                     >
-                      {isDiagnosticRunning ? (
+                      {isLoading ? (
                         <>
-                          <PulseLoader size={8} color="white" className="animate-pulse" />
-                          <span>{t('auth.login.diagnosing')}</span>
+                          <PulseLoader size={12} color="white" className="animate-pulse" />
+                          <span>{t('auth.login.loggingIn')}</span>
                         </>
                       ) : (
                         <>
-                          <span className="h-4 w-4">🔍</span>
-                          <span>{t('auth.login.runDiagnostics')}</span>
+                          <span className="h-5 w-5">🚪</span>
+                          <span>{t('auth.login.submit')}</span>
                         </>
                       )}
                     </button>
+                  </div>
+
+                  {/* Register Link - In a Box */}
+                  <div className="mt-8 p-6 bg-gradient-to-r from-sky-50 to-cyan-50 dark:from-sky-900/20 dark:to-cyan-900/20 rounded-xl border-2 border-sky-200 dark:border-sky-700 shadow-lg hover:shadow-xl transition-all duration-300">
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="text-base text-gray-700 dark:text-gray-300 font-medium">
+                        {t('auth.login.noAccount')}
+                      </span>
+                      <Link
+                        to="/register"
+                        className="text-base text-sky-600 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 transition-colors duration-300 font-bold hover:underline flex items-center gap-1"
+                      >
+                        注册
+                        <span className="text-xl">→</span>
+                      </Link>
+                    </div>
                   </div>
                 </form>
               </div>

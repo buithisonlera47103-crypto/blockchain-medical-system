@@ -5,14 +5,13 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { body, query, param } from 'express-validator';
-import { Pool } from 'mysql2/promise';
 
 import { asyncHandler } from '../middleware/asyncHandler';
 import { authenticateToken } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
-import { AnalyticsService } from '../services/AnalyticsService';
 import { AppError } from '../utils/AppError';
 import { logger } from '../utils/logger';
+import { getRedisClient } from '../utils/redisClient';
 
 // 分析相关接口
 export interface AnalyticsQuery {
@@ -113,13 +112,50 @@ export interface PredictionResponse {
 }
 
 /**
- * 创建分析路由
+ * 缓存辅助函数
+ * 尝试从Redis获取缓存数据，如果不存在则执行数据获取函数并缓存结果
  */
-export function createAnalyticsRoutes(db: Pool): Router {
-  const router = Router();
-  // const _analyticsService = new AnalyticsService(db, logger); // 已简化
+async function withCache<T>(
+  cacheKey: string,
+  ttlSeconds: number,
+  dataFetcher: () => Promise<T>
+): Promise<T> {
+  const redis = getRedisClient();
 
-  // 基础分析服务已简化，无需初始化
+  // 尝试从缓存读取
+  if (redis) {
+    try {
+      const cachedData = await redis.get(cacheKey);
+      if (cachedData) {
+        logger.info('Cache hit', { cacheKey });
+        return JSON.parse(cachedData) as T;
+      }
+    } catch (error) {
+      logger.warn('Cache read failed', { error, cacheKey });
+    }
+  }
+
+  // 缓存未命中，获取新数据
+  const data = await dataFetcher();
+
+  // 写入缓存
+  if (redis) {
+    try {
+      await redis.setex(cacheKey, ttlSeconds, JSON.stringify(data));
+      logger.info('Cache written', { cacheKey, ttl: ttlSeconds });
+    } catch (error) {
+      logger.warn('Cache write failed', { error, cacheKey });
+    }
+  }
+
+  return data;
+}
+
+/**
+ * 创建分析路由
+ * 修复: 直接创建router实例而不是导出函数，与其他路由保持一致
+ */
+const router = Router();
 
   /**
    * 获取仪表板概览数据
@@ -127,12 +163,30 @@ export function createAnalyticsRoutes(db: Pool): Router {
    */
   router.get(
     '/dashboard',
+    // 调试: 添加日志追踪请求流程
+    (req: Request, res: Response, next: NextFunction) => {
+      console.log('[DEBUG] Analytics Dashboard - Step 1: Request received');
+      next();
+    },
     authenticateToken,
+    (req: Request, res: Response, next: NextFunction) => {
+      console.log('[DEBUG] Analytics Dashboard - Step 2: After authenticateToken');
+      next();
+    },
     query('period').optional().isIn(['7d', '30d', '90d', '1y']).withMessage('Invalid period'),
     query('timezone').optional().isString().withMessage('Timezone must be a string'),
+    (req: Request, res: Response, next: NextFunction) => {
+      console.log('[DEBUG] Analytics Dashboard - Step 3: After query validation');
+      next();
+    },
     validateRequest,
+    (req: Request, res: Response, next: NextFunction) => {
+      console.log('[DEBUG] Analytics Dashboard - Step 4: After validateRequest');
+      next();
+    },
     asyncHandler(
     async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+      console.log('[DEBUG] Analytics Dashboard - Step 5: Inside asyncHandler');
       try {
         const { period = '30d', timezone = 'UTC' } = req.query;
 
@@ -141,6 +195,23 @@ export function createAnalyticsRoutes(db: Pool): Router {
           period,
           timezone,
         });
+
+        // 尝试从Redis缓存获取数据
+        const cacheKey = `analytics:dashboard:${period}:${timezone}`;
+        const redis = getRedisClient();
+
+        if (redis) {
+          try {
+            const cachedData = await redis.get(cacheKey);
+            if (cachedData) {
+              logger.info('Dashboard metrics retrieved from cache', { cacheKey });
+              res.json(JSON.parse(cachedData));
+              return;
+            }
+          } catch (cacheError) {
+            logger.warn('Redis cache read failed, continuing without cache', { error: cacheError });
+          }
+        }
 
         // 计算日期范围
         const endDate = new Date();
@@ -165,7 +236,7 @@ export function createAnalyticsRoutes(db: Pool): Router {
         const overview = { totalUsers: 100, activeUsers: 80, totalTransactions: 500, totalVolume: 10000 };
 
         // 获取图表数据
-        const trendGranularity = (period === '7d' || period === '30d') ? 'day' : 'week';
+        const _trendGranularity = (period === '7d' || period === '30d') ? 'day' : 'week';
         const userGrowth = [{ date: startDate.toISOString(), count: 10 }];
         const transactionVolume = [{ date: startDate.toISOString(), volume: 100 }];
         const topCategories = [{ category: 'medical', count: 50 }];
@@ -222,11 +293,23 @@ export function createAnalyticsRoutes(db: Pool): Router {
            }) : [],
         };
 
-        res.json({
+        const responseData = {
           success: true,
           data: dashboardData,
           message: 'Dashboard metrics retrieved successfully',
-        });
+        };
+
+        // 将数据写入Redis缓存（5分钟TTL）
+        if (redis) {
+          try {
+            await redis.setex(cacheKey, 300, JSON.stringify(responseData)); // 5分钟 = 300秒
+            logger.info('Dashboard metrics cached successfully', { cacheKey, ttl: 300 });
+          } catch (cacheError) {
+            logger.warn('Redis cache write failed', { error: cacheError });
+          }
+        }
+
+        res.json(responseData);
       } catch (error) {
         logger.error('Failed to fetch dashboard metrics', { error });
         next(error);
@@ -491,15 +574,15 @@ export function createAnalyticsRoutes(db: Pool): Router {
           model: predictionRequest.model,
           predictions: Array.isArray(predictions.data) ? predictions.data.map((item: { date: string; value: number; confidence: number; upperBound: number; lowerBound: number }) => ({
             date: String(item.date),
-            value: Number(item.value) ?? 0,
-            confidence: Number(item.confidence) ?? 0,
-            upperBound: Number(item.upperBound) ?? 0,
-            lowerBound: Number(item.lowerBound) ?? 0,
+            value: Number(item.value) || 0,
+            confidence: Number(item.confidence) || 0,
+            upperBound: Number(item.upperBound) || 0,
+            lowerBound: Number(item.lowerBound) || 0,
           })) : [],
           accuracy: {
-            mape: Number((predictions.accuracy as Record<string, unknown>)?.mape) ?? 0,
-            rmse: Number((predictions.accuracy as Record<string, unknown>)?.rmse) ?? 0,
-            r2: Number((predictions.accuracy as Record<string, unknown>)?.r2) ?? 0,
+            mape: Number((predictions.accuracy as Record<string, unknown>)?.mape) || 0,
+            rmse: Number((predictions.accuracy as Record<string, unknown>)?.rmse) || 0,
+            r2: Number((predictions.accuracy as Record<string, unknown>)?.r2) || 0,
           },
           insights: Array.isArray(predictions.insights) ? predictions.insights.map(String) : [],
           generatedAt: new Date().toISOString(),
@@ -544,23 +627,33 @@ export function createAnalyticsRoutes(db: Pool): Router {
           interval,
         });
 
-        const realtimeData = {
-          current: { cpu: 45, memory: 60, requests: 100 },
-          history: [{ timestamp: new Date().toISOString(), cpu: 45, memory: 60 }],
-          alerts: [],
-          lastUpdated: new Date().toISOString()
-        };
+        // 使用缓存（30秒TTL，因为是实时数据）
+        const cacheKey = `analytics:realtime:${metricsArray.join(',')}`;
+        const responseData = await withCache(
+          cacheKey,
+          30, // 30秒TTL
+          async () => {
+            const realtimeData = {
+              current: { cpu: 45, memory: 60, requests: 100 },
+              history: [{ timestamp: new Date().toISOString(), cpu: 45, memory: 60 }],
+              alerts: [],
+              lastUpdated: new Date().toISOString()
+            };
 
-        res.json({
-          success: true,
-          data: {
-            metrics: realtimeData.current,
-            history: realtimeData.history,
-            alerts: realtimeData.alerts,
-            lastUpdated: realtimeData.lastUpdated,
-          },
-          message: 'Realtime metrics retrieved successfully',
-        });
+            return {
+              success: true,
+              data: {
+                metrics: realtimeData.current,
+                history: realtimeData.history,
+                alerts: realtimeData.alerts,
+                lastUpdated: realtimeData.lastUpdated,
+              },
+              message: 'Realtime metrics retrieved successfully',
+            };
+          }
+        );
+
+        res.json(responseData);
       } catch (error) {
         logger.error('Failed to fetch realtime metrics', { error });
         next(error);
@@ -596,12 +689,18 @@ export function createAnalyticsRoutes(db: Pool): Router {
           endDate,
         });
 
-        const behaviorAnalysis = {
-          userId: userId as string,
-          patterns: ['活跃用户', '正常使用模式'],
-          insights: ['用户行为正常'],
-          recommendations: ['继续保持']
-        };
+        // 使用缓存（TTL: 10分钟 = 600秒）
+        const cacheKey = `analytics:user-behavior:${userId}:${startDate}:${endDate}`;
+        const behaviorAnalysis = await withCache(
+          cacheKey,
+          600, // 10分钟TTL
+          async () => ({
+            userId: userId as string,
+            patterns: ['活跃用户', '正常使用模式'],
+            insights: ['用户行为正常'],
+            recommendations: ['继续保持']
+          })
+        );
 
         res.json({
           success: true,
@@ -644,12 +743,18 @@ export function createAnalyticsRoutes(db: Pool): Router {
           granularity,
         });
 
-        const performanceMetrics = {
-          component: component as string,
-          metrics: { cpu: 50, memory: 60, responseTime: 200 },
-          status: 'healthy',
-          recommendations: ['性能良好']
-        };
+        // 使用缓存（TTL: 15分钟 = 900秒）
+        const cacheKey = `analytics:performance:${component}:${startDate}:${endDate}:${granularity}`;
+        const performanceMetrics = await withCache(
+          cacheKey,
+          900, // 15分钟TTL
+          async () => ({
+            component: component as string,
+            metrics: { cpu: 50, memory: 60, responseTime: 200 },
+            status: 'healthy',
+            recommendations: ['性能良好']
+          })
+        );
 
         res.json({
           success: true,
@@ -732,7 +837,7 @@ export function createAnalyticsRoutes(db: Pool): Router {
     asyncHandler(
     async (req: Request, res: Response, next: NextFunction): Promise<void> => {
       try {
-        const { query, format, filename } = req.body;
+        const { query: _query, format, filename } = req.body;
 
         logger.info('Exporting analytics data', {
           userId: (req as { user?: { id: string } }).user?.id,
@@ -791,12 +896,18 @@ export function createAnalyticsRoutes(db: Pool): Router {
           tables: tableList,
         });
 
-        const qualityReport = {
-          tables: tableList ?? [],
-          overallScore: 95,
-          issues: [],
-          recommendations: ['数据质量良好']
-        };
+        // 使用缓存（TTL: 15分钟 = 900秒）
+        const cacheKey = `analytics:data-quality:${tables || 'all'}`;
+        const qualityReport = await withCache(
+          cacheKey,
+          900, // 15分钟TTL
+          async () => ({
+            tables: tableList ?? [],
+            overallScore: 95,
+            issues: [],
+            recommendations: ['数据质量良好']
+          })
+        );
 
         res.json({
           success: true,
@@ -811,7 +922,5 @@ export function createAnalyticsRoutes(db: Pool): Router {
     )
   );
 
-  return router;
-}
-
-export default createAnalyticsRoutes;
+// 修复: 直接导出router实例，与其他路由文件保持一致
+export default router;

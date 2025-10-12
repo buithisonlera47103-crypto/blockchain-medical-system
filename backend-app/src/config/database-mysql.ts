@@ -50,7 +50,7 @@ function readSecretEnv(varName: string, fallback?: string): string | undefined {
 const poolConfig: PoolOptions = {
   host: process.env.MYSQL_HOST || process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.MYSQL_PORT || process.env.DB_PORT || '3306', 10),
-  database: process.env.MYSQL_DATABASE || process.env.DB_NAME || 'emr_blockchain',
+  database: process.env.MYSQL_DATABASE || process.env.DB_NAME || 'blockchain_emr',
   user: process.env.MYSQL_USER || process.env.DB_USER || 'emr_user',
   password: readSecretEnv('MYSQL_PASSWORD', readSecretEnv('DB_PASSWORD', 'emr_password')),
   connectionLimit: parseInt(process.env.DB_POOL_SIZE || process.env.DB_POOL_MAX || '10', 10),

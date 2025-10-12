@@ -121,7 +121,7 @@ interface ValidationStatistics {
   commonErrors: Array<{ code: string; count: number }>;
 }
 
-class HealthcareStandardsService {
+export class HealthcareStandardsService {
   private readonly db: Pool;
   private readonly fhirProfiles: Map<string, FHIRProfile>;
   private readonly hl7MessageTypes: Map<string, HL7MessageTypeConfig>;

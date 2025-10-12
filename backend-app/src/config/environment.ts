@@ -170,7 +170,7 @@ class EnvironmentManager {
     return {
       host: process.env["MYSQL_HOST"] ?? process.env["DB_HOST"] ?? 'localhost',
       port: parseInt(process.env["MYSQL_PORT"] ?? process.env["DB_PORT"] ?? '3306', 10),
-      database: process.env["MYSQL_DATABASE"] ?? process.env["DB_NAME"] ?? 'emr_blockchain',
+      database: process.env["MYSQL_DATABASE"] ?? process.env["DB_NAME"] ?? 'blockchain_emr',
       username: process.env["MYSQL_USER"] ?? process.env["DB_USER"] ?? 'root',
       password: process.env["MYSQL_PASSWORD"] ?? process.env["DB_PASSWORD"] ?? 'password',
       ssl: process.env["DB_SSL"] === 'true',

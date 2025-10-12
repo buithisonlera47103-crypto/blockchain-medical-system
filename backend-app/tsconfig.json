@@ -21,7 +21,7 @@
     "downlevelIteration": true,
     "allowSyntheticDefaultImports": true,
     "moduleResolution": "node",
-    "typeRoots": ["./node_modules/@types", "./src/types"],
+    "typeRoots": ["./node_modules/@types", "./src/types/shims"],
     "baseUrl": "./src",
     "paths": {
       "@/*": ["*"],
@@ -30,7 +30,8 @@
       "@utils/*": ["utils/*"],
       "@routes/*": ["routes/*"],
       "@middleware/*": ["middleware/*"],
-      "@types/*": ["types/*"]
+      "@types/*": ["types/*"],
+      "ioredis": ["types/shims/ioredis"]
     }
   },
   "include": [
